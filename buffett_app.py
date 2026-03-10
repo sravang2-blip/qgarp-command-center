@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import time
+import requests
 
 st.set_page_config(page_title="Sravan's QGARP Command Center", layout="wide")
 st.title("🏛️ Sravan's 3-Tier QGARP Command Center")
@@ -26,7 +27,7 @@ nifty_tickers = [
     "TITAN.NS", "TRENT.NS", "ULTRACEMCO.NS", "WIPRO.NS"
 ]
 
-# Combine the lists so Pidilite is NEVER left behind, while avoiding duplicates
+# Combine the lists so Pidilite is NEVER left behind
 scan_list = core_portfolio + [t for t in nifty_tickers if t not in core_portfolio]
 
 psu_financials = ["SBIN.NS"]
@@ -45,10 +46,17 @@ if st.button("🚀 Run Command Center Scan"):
     status_text = st.empty()
     all_data = []
     
+    # --- THE STEALTH CLOAK: Forging a human browser footprint ---
+    stealth_session = requests.Session()
+    stealth_session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    })
+    
     for i, ticker in enumerate(scan_list):
         status_text.text(f"Analyzing {ticker}... ({i+1}/{len(scan_list)})")
         try:
-            stock = yf.Ticker(ticker)
+            # Injecting the stealth session into yfinance
+            stock = yf.Ticker(ticker, session=stealth_session)
             info = stock.info
             
             price = safe_float(info, 'currentPrice', safe_float(info, 'regularMarketPrice', 0.0))
@@ -77,24 +85,17 @@ if st.button("🚀 Run Command Center Scan"):
             moat_score = min(10.0, max(0.0, moat_score))
             
             fin_score = 0.0
-            if roe > 25: 
-                fin_score += 5
-            elif roe > 15: 
-                fin_score += 3
+            if roe > 25: fin_score += 5
+            elif roe > 15: fin_score += 3
             
-            if sector == 'Financial Services':
-                fin_score += 5 
+            if sector == 'Financial Services': fin_score += 5 
             else:
-                if debt_eq < 0.5: 
-                    fin_score += 5
-                elif debt_eq < 1.0: 
-                    fin_score += 3
+                if debt_eq < 0.5: fin_score += 5
+                elif debt_eq < 1.0: fin_score += 3
                 
             cons_score = 0.0
-            if eps > 0: 
-                cons_score += 2
-            if profit_margin > 10: 
-                cons_score += 3
+            if eps > 0: cons_score += 2
+            if profit_margin > 10: cons_score += 3
                 
             quality_score = moat_score + fin_score + cons_score
             base_pe = 10 + (quality_score * 1.0)
@@ -109,8 +110,7 @@ if st.button("🚀 Run Command Center Scan"):
             
             # --- 3. THE BROADER DISCOVERY ENGINE (For the rest of NIFTY 50) ---
             else:
-                if ticker == 'RELIANCE.NS':
-                    sector_multiplier = 1.00 
+                if ticker == 'RELIANCE.NS': sector_multiplier = 1.00 
                 elif sector == 'Consumer Defensive':
                     if industry == 'Tobacco': sector_multiplier = 0.54
                     elif roe > 50: sector_multiplier = 2.00  
@@ -121,17 +121,12 @@ if st.button("🚀 Run Command Center Scan"):
                         sector_multiplier = 1.80 if roe > 15 else 1.20 
                     else: sector_multiplier = 0.45 
                 elif sector == 'Consumer Cyclical' or sector == 'Communication Services':
-                    if 'Lodging' in industry or 'Travel' in industry:
-                        sector_multiplier = 0.80 
-                    elif 'Internet' in industry or 'Retail' in industry or 'Restaurants' in industry:
-                        sector_multiplier = 1.50 
-                    elif 'Auto' in industry:
-                        sector_multiplier = 1.00 # Autos are cyclical
+                    if 'Lodging' in industry or 'Travel' in industry: sector_multiplier = 0.80 
+                    elif 'Internet' in industry or 'Retail' in industry or 'Restaurants' in industry: sector_multiplier = 1.50 
+                    elif 'Auto' in industry: sector_multiplier = 1.00 
                     else: sector_multiplier = 1.00 
-                elif sector in ['Utilities', 'Energy']:
-                    sector_multiplier = 0.40 
-                elif sector == 'Industrials':
-                    sector_multiplier = 1.50 if roe > 15 else 1.00 
+                elif sector in ['Utilities', 'Energy']: sector_multiplier = 0.40 
+                elif sector == 'Industrials': sector_multiplier = 1.50 if roe > 15 else 1.00 
                 elif sector == 'Financial Services':
                     if ticker in psu_financials: sector_multiplier = 0.28 
                     elif ticker in ['SBILIFE.NS', 'HDFCLIFE.NS']: sector_multiplier = 0.80 
@@ -147,7 +142,6 @@ if st.button("🚀 Run Command Center Scan"):
             val_score = 0.0
             is_data_glitch = False
             
-            # The GIGO Filter: Prevent Yahoo Finance unadjusted EPS glitches (like Tata Steel)
             if eps > (price * 0.4): 
                 is_data_glitch = True
                 distance = 999
@@ -163,23 +157,14 @@ if st.button("🚀 Run Command Center Scan"):
             total_buffett_score = round(quality_score + val_score, 1)
 
             # --- 5. DYNAMIC EXIT STRATEGY ---
-            if is_data_glitch:
-                status = "⚠️ API GLITCH"
-                total_buffett_score = 0.0
-            elif total_buffett_score < 18.0:
-                status = "☠️ MOAT BROKEN - SELL 100%"
-            elif distance >= 150.0:
-                status = "🔥 MANIA - TRIM 30%"
-            elif distance >= 100.0:
-                status = "🚨 BUBBLE - TRIM 20%"
-            elif distance >= 75.0:
-                status = "🟠 OVERVALUED - TRIM 10%"
-            elif distance <= 0: 
-                status = "✅ IN BUY ZONE"
-            elif distance <= 5: 
-                status = "⚠️ NEAR BUY ZONE"
-            else: 
-                status = "⏳ WAIT"
+            if is_data_glitch: status = "⚠️ API GLITCH"
+            elif total_buffett_score < 18.0: status = "☠️ MOAT BROKEN - SELL 100%"
+            elif distance >= 150.0: status = "🔥 MANIA - TRIM 30%"
+            elif distance >= 100.0: status = "🚨 BUBBLE - TRIM 20%"
+            elif distance >= 75.0: status = "🟠 OVERVALUED - TRIM 10%"
+            elif distance <= 0: status = "✅ IN BUY ZONE"
+            elif distance <= 5: status = "⚠️ NEAR BUY ZONE"
+            else: status = "⏳ WAIT"
 
             if eps > 0 and price > 0: 
                 all_data.append({
@@ -196,10 +181,12 @@ if st.button("🚀 Run Command Center Scan"):
                     "Action": status
                 })
         except Exception as e:
+            # We silently print errors to the cloud terminal instead of completely crashing the UI
+            print(f"Skipped {ticker} due to error: {e}")
             pass 
             
         progress_bar.progress((i + 1) / len(scan_list))
-        time.sleep(0.1) 
+        time.sleep(0.5) # Increased delay to avoid tripping rate limits
 
     status_text.text("Scan Complete!")
     
@@ -252,4 +239,4 @@ if st.button("🚀 Run Command Center Scan"):
         st.dataframe(format_df(df_elite).style.apply(highlight_action, axis=1), use_container_width=True)
 
     else:
-        st.error("Data fetch failed. Check your internet connection.")
+        st.error("Data fetch failed. Market data is temporarily restricted. Please try again later.")
