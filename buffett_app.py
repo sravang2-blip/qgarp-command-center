@@ -46,17 +46,11 @@ if st.button("🚀 Run Command Center Scan"):
     status_text = st.empty()
     all_data = []
     
-    # --- THE STEALTH CLOAK: Forging a human browser footprint ---
-    stealth_session = requests.Session()
-    stealth_session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    })
-    
     for i, ticker in enumerate(scan_list):
         status_text.text(f"Analyzing {ticker}... ({i+1}/{len(scan_list)})")
         try:
             # Injecting the stealth session into yfinance
-            stock = yf.Ticker(ticker, session=stealth_session)
+            stock = yf.Ticker(ticker)
             info = stock.info
             
             price = safe_float(info, 'currentPrice', safe_float(info, 'regularMarketPrice', 0.0))
