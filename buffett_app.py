@@ -2,18 +2,17 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import time
-import requests
 
 st.set_page_config(page_title="Sravan's QGARP Command Center", layout="wide")
 st.title("🏛️ Sravan's 3-Tier QGARP Command Center")
-st.write("Execution at the top, portfolio health in the middle, and broader market discovery at the bottom.")
+st.write("Execution at the top, portfolio health in the middle, and pure, noise-free market discovery at the bottom.")
 
 # 🛡️ THE FORTRESS (Never to be altered)
 core_portfolio = [
     "ASIANPAINT.NS", "NESTLEIND.NS", "PIDILITIND.NS", "HDFCBANK.NS", "TCS.NS", "ITC.NS"
 ]
 
-# The NIFTY 50 Index (For broader discovery)
+# The NIFTY 50 Index 
 nifty_tickers = [
     "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS", 
     "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS", 
@@ -27,10 +26,16 @@ nifty_tickers = [
     "TITAN.NS", "TRENT.NS", "ULTRACEMCO.NS", "WIPRO.NS"
 ]
 
-# Combine the lists so Pidilite is NEVER left behind
-scan_list = core_portfolio + [t for t in nifty_tickers if t not in core_portfolio]
+# 🚫 THE QUALITATIVE KILL LIST (Banning the Value Traps from the Discovery Zone)
+exclude_list = [
+    "COALINDIA.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "BPCL.NS", "SBIN.NS", # PSUs & Energy Traps
+    "TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", # Capital Heavy Commodities
+    "TATAMOTORS.NS", "M&M.NS", "MARUTI.NS", "HEROMOTOCO.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS", # Cyclical Autos
+    "ADANIENT.NS", "ADANIPORTS.NS" # Capital Heavy / High Debt
+]
 
-psu_financials = ["SBIN.NS"]
+# Combine the lists: Core 6 are protected, Nifty 50 is added, but the Kill List is ruthlessly purged
+scan_list = core_portfolio + [t for t in nifty_tickers if t not in core_portfolio and t not in exclude_list]
 
 def safe_float(info_dict, key, default=0.0):
     try:
@@ -49,7 +54,6 @@ if st.button("🚀 Run Command Center Scan"):
     for i, ticker in enumerate(scan_list):
         status_text.text(f"Analyzing {ticker}... ({i+1}/{len(scan_list)})")
         try:
-            # Injecting the stealth session into yfinance
             stock = yf.Ticker(ticker)
             info = stock.info
             
@@ -102,7 +106,7 @@ if st.button("🚀 Run Command Center Scan"):
                 elif ticker == "NESTLEIND.NS": sector_multiplier = 2.00
                 elif ticker in ["ASIANPAINT.NS", "PIDILITIND.NS"]: sector_multiplier = 1.80
             
-            # --- 3. THE BROADER DISCOVERY ENGINE (For the rest of NIFTY 50) ---
+            # --- 3. THE BROADER DISCOVERY ENGINE (For the surviving NIFTY contenders) ---
             else:
                 if ticker == 'RELIANCE.NS': sector_multiplier = 1.00 
                 elif sector == 'Consumer Defensive':
@@ -110,20 +114,13 @@ if st.button("🚀 Run Command Center Scan"):
                     elif roe > 50: sector_multiplier = 2.00  
                     elif roe > 15: sector_multiplier = 1.80  
                     else: sector_multiplier = 1.20
-                elif sector == 'Basic Materials':
-                    if 'Chemical' in industry or 'Paint' in industry:
-                        sector_multiplier = 1.80 if roe > 15 else 1.20 
-                    else: sector_multiplier = 0.45 
                 elif sector == 'Consumer Cyclical' or sector == 'Communication Services':
                     if 'Lodging' in industry or 'Travel' in industry: sector_multiplier = 0.80 
                     elif 'Internet' in industry or 'Retail' in industry or 'Restaurants' in industry: sector_multiplier = 1.50 
-                    elif 'Auto' in industry: sector_multiplier = 1.00 
                     else: sector_multiplier = 1.00 
-                elif sector in ['Utilities', 'Energy']: sector_multiplier = 0.40 
                 elif sector == 'Industrials': sector_multiplier = 1.50 if roe > 15 else 1.00 
                 elif sector == 'Financial Services':
-                    if ticker in psu_financials: sector_multiplier = 0.28 
-                    elif ticker in ['SBILIFE.NS', 'HDFCLIFE.NS']: sector_multiplier = 0.80 
+                    if ticker in ['SBILIFE.NS', 'HDFCLIFE.NS']: sector_multiplier = 0.80 
                     else: sector_multiplier = 0.55 
                 elif sector == 'Technology': sector_multiplier = 0.60  
                 elif sector == 'Healthcare': sector_multiplier = 1.20
@@ -175,12 +172,10 @@ if st.button("🚀 Run Command Center Scan"):
                     "Action": status
                 })
         except Exception as e:
-            # We silently print errors to the cloud terminal instead of completely crashing the UI
-            print(f"Skipped {ticker} due to error: {e}")
             pass 
             
         progress_bar.progress((i + 1) / len(scan_list))
-        time.sleep(0.5) # Increased delay to avoid tripping rate limits
+        time.sleep(0.5)
 
     status_text.text("Scan Complete!")
     
@@ -228,8 +223,8 @@ if st.button("🚀 Run Command Center Scan"):
 
         # --- TIER 3: ELITE NIFTY 50 DISCOVERY ---
         st.markdown("---")
-        st.subheader("🦅 Elite NIFTY 50 Discovery Zone")
-        st.write("Broader market scan showing alternative compounders scoring >= 20/30.")
+        st.subheader("🦅 Elite Discovery Zone (Noise Filtered)")
+        st.write("Broader market scan showing only the purest, non-cyclical compounders scoring >= 20/30.")
         st.dataframe(format_df(df_elite).style.apply(highlight_action, axis=1), use_container_width=True)
 
     else:
