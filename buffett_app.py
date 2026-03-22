@@ -12,6 +12,17 @@ core_portfolio = [
     "ASIANPAINT.NS", "NESTLEIND.NS", "PIDILITIND.NS", "HDFCBANK.NS", "TCS.NS", "ITC.NS"
 ]
 
+# 👨‍👩‍👦 FAMILY PORTFOLIOS (Son & Wife)
+family_portfolio = {
+    "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
+    "IREDA.NS": {"Qty": 480, "Entry Price": 141.37},     
+    "KPIGREEN.NS": {"Qty": 93, "Entry Price": 486.57},   
+    "SUZLON.NS": {"Qty": 302, "Entry Price": 46.52},     
+    "KEC.NS": {"Qty": 78, "Entry Price": 589.67},        
+    "JUNIORBEES.NS": {"Qty": 35, "Entry Price": 722.99}, 
+    "HDFCSML250.NS": {"Qty": 157, "Entry Price": 156.25} 
+}
+
 # The NIFTY 50 Index 
 nifty_tickers = [
     "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS", 
@@ -26,16 +37,15 @@ nifty_tickers = [
     "TITAN.NS", "TRENT.NS", "ULTRACEMCO.NS", "WIPRO.NS"
 ]
 
-# 🚫 THE QUALITATIVE KILL LIST (Banning the Value Traps from the Discovery Zone)
+# 🚫 THE QUALITATIVE KILL LIST 
 exclude_list = [
-    "COALINDIA.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "BPCL.NS", "SBIN.NS", # PSUs & Energy Traps
-    "TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", # Capital Heavy Commodities
-    "TATAMOTORS.NS", "M&M.NS", "MARUTI.NS", "HEROMOTOCO.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS", # Cyclical Autos
-    "ADANIENT.NS", "ADANIPORTS.NS" # Capital Heavy / High Debt
+    "COALINDIA.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "BPCL.NS", "SBIN.NS", 
+    "TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", 
+    "TATAMOTORS.NS", "M&M.NS", "MARUTI.NS", "HEROMOTOCO.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS", 
+    "ADANIENT.NS", "ADANIPORTS.NS" 
 ]
 
-# Combine the lists: Core 6 are protected, Nifty 50 is added, but the Kill List is ruthlessly purged
-scan_list = core_portfolio + [t for t in nifty_tickers if t not in core_portfolio and t not in exclude_list]
+scan_list = core_portfolio + list(family_portfolio.keys()) + [t for t in nifty_tickers if t not in core_portfolio and t not in family_portfolio.keys() and t not in exclude_list]
 
 def safe_float(info_dict, key, default=0.0):
     try:
@@ -57,8 +67,16 @@ if st.button("🚀 Run Command Center Scan"):
             stock = yf.Ticker(ticker)
             info = stock.info
             
+            # Fast info fallback for current price if primary info fails
+            if not info or ('currentPrice' not in info and 'regularMarketPrice' not in info):
+                last_price = stock.fast_info.get('lastPrice', 0.0)
+                if last_price > 0:
+                    info['currentPrice'] = last_price
+                    
             price = safe_float(info, 'currentPrice', safe_float(info, 'regularMarketPrice', 0.0))
             eps = safe_float(info, 'trailingEps', 0.0)
+            
+            is_etf = ticker in ["JUNIORBEES.NS", "HDFCSML250.NS"]
             
             roe = safe_float(info, 'returnOnEquity', 0.0)
             if roe == 0.0:
@@ -96,17 +114,37 @@ if st.button("🚀 Run Command Center Scan"):
             if profit_margin > 10: cons_score += 3
                 
             quality_score = moat_score + fin_score + cons_score
+            
+            # --- 1.5. DYNAMIC GROWTH OVERRIDES (Future-Proofed) ---
+            if ticker == "KEC.NS" and profit_margin < 8.0:
+                quality_score += 8.0  # EPC Order Book Premium (Fades if margins naturally rise > 8%)
+            elif ticker in ["IREDA.NS", "KPIGREEN.NS"] and roe < 20.0:
+                quality_score += 2.0  
+            elif ticker == "ATHERENERG.NS" and eps <= 0:
+                quality_score += 5.0  # EV Pre-Profit Forgiveness
+            elif ticker == "SUZLON.NS" and debt_eq > 0.1:
+                quality_score += 1.0  
+                
+            quality_score = min(25.0, quality_score) # STRICT CAP: Base PE maxes at 35
+                
             base_pe = 10 + (quality_score * 1.0)
             
-            # --- 2. THE FORTRESS OVERRIDE (Core 6 Protection) ---
+            # --- 2. MULTIPLIERS & CALIBRATION ---
             if ticker in core_portfolio:
                 if ticker == "TCS.NS": sector_multiplier = 0.60
                 elif ticker == "HDFCBANK.NS": sector_multiplier = 0.65
                 elif ticker == "ITC.NS": sector_multiplier = 0.54
                 elif ticker == "NESTLEIND.NS": sector_multiplier = 2.00
                 elif ticker in ["ASIANPAINT.NS", "PIDILITIND.NS"]: sector_multiplier = 1.80
+
+            elif ticker in family_portfolio:
+                if ticker == "IREDA.NS": sector_multiplier = 0.60
+                elif ticker == "KPIGREEN.NS": sector_multiplier = 0.65
+                elif ticker == "SUZLON.NS": sector_multiplier = 0.65
+                elif ticker == "KEC.NS": sector_multiplier = 0.85
+                elif ticker == "ATHERENERG.NS": sector_multiplier = 1.00
+                else: sector_multiplier = 1.00 
             
-            # --- 3. THE BROADER DISCOVERY ENGINE (For the surviving NIFTY contenders) ---
             else:
                 if ticker == 'RELIANCE.NS': sector_multiplier = 1.00 
                 elif sector == 'Consumer Defensive':
@@ -129,35 +167,50 @@ if st.button("🚀 Run Command Center Scan"):
             fair_pe = base_pe * sector_multiplier
             target = eps * fair_pe
             
-            # --- 4. VALUATION SCORE & API SANITY CHECK ---
+            # --- 3. SCORING & DYNAMIC FLAGS ---
             val_score = 0.0
             is_data_glitch = False
             
-            if eps > (price * 0.4): 
-                is_data_glitch = True
-                distance = 999
-                target = 0.0
-            elif price > 0 and target > 0:
-                distance = ((price - target) / target) * 100
-                if distance <= 0: val_score = 5.0
-                elif distance <= 5: val_score = 4.0
-                elif distance <= 15: val_score = 2.0
+            if is_etf:
+                target = price
+                distance = 0.0
+                val_score = 5.0
+                total_buffett_score = 30.0
+                status = "📈 ETF - PASSIVE HOLD"
+                fair_pe = 0.0
+            elif ticker == "ATHERENERG.NS":
+                target = price 
+                distance = 0.0
+                val_score = 3.0
+                total_buffett_score = round(min(30.0, quality_score + val_score), 1)
+                status = "🚀 PRE-PROFIT EV"
+                fair_pe = 0.0
             else:
-                distance = 999
-                
-            total_buffett_score = round(quality_score + val_score, 1)
+                if eps > (price * 0.4): 
+                    is_data_glitch = True
+                    distance = 999
+                    target = 0.0
+                elif price > 0 and target > 0:
+                    distance = ((price - target) / target) * 100
+                    if distance <= 0: val_score = 5.0
+                    elif distance <= 5: val_score = 4.0
+                    elif distance <= 15: val_score = 2.0
+                else:
+                    distance = 999
+                    
+                total_buffett_score = round(quality_score + val_score, 1)
 
-            # --- 5. DYNAMIC EXIT STRATEGY ---
-            if is_data_glitch: status = "⚠️ API GLITCH"
-            elif total_buffett_score < 18.0: status = "☠️ MOAT BROKEN - SELL 100%"
-            elif distance >= 150.0: status = "🔥 MANIA - TRIM 30%"
-            elif distance >= 100.0: status = "🚨 BUBBLE - TRIM 20%"
-            elif distance >= 75.0: status = "🟠 OVERVALUED - TRIM 10%"
-            elif distance <= 0: status = "✅ IN BUY ZONE"
-            elif distance <= 5: status = "⚠️ NEAR BUY ZONE"
-            else: status = "⏳ WAIT"
+                if is_data_glitch: status = "⚠️ API GLITCH"
+                elif total_buffett_score < 18.0: status = "☠️ MOAT BROKEN - SELL 100%"
+                elif distance >= 150.0: status = "🔥 MANIA - TRIM 30%"
+                elif distance >= 100.0: status = "🚨 BUBBLE - TRIM 20%"
+                elif distance >= 75.0: status = "🟠 OVERVALUED - TRIM 10%"
+                elif distance <= 0: status = "✅ IN BUY ZONE"
+                elif distance <= 5: status = "⚠️ NEAR BUY ZONE"
+                else: status = "⏳ WAIT"
 
-            if eps > 0 and price > 0: 
+            # Strict Inclusion Logic (Standardized to ATHERENERG.NS)
+            if (eps > 0 and price > 0) or is_etf or ticker == "ATHERENERG.NS": 
                 all_data.append({
                     "Ticker": ticker, 
                     "Stock": info.get('shortName', ticker),
@@ -191,9 +244,9 @@ if st.button("🚀 Run Command Center Scan"):
             if df.empty: return df
             df_disp = df.drop(columns=["Ticker", "Numeric Score"]).sort_values(by="Buffett Score", ascending=False).reset_index(drop=True)
             df_disp["Live Price"] = df_disp["Live Price"].apply(lambda x: f"₹{x:,.2f}")
-            df_disp["Live EPS"] = df_disp["Live EPS"].apply(lambda x: f"₹{x:,.2f}")
-            df_disp["Target (₹)"] = df_disp["Target (₹)"].apply(lambda x: f"₹{x:,.0f}")
-            df_disp["Distance (%)"] = df_disp["Distance (%)"].apply(lambda x: f"{x}%")
+            df_disp["Live EPS"] = df_disp["Live EPS"].apply(lambda x: "N/A" if x <= 0 else f"₹{x:,.2f}")
+            df_disp["Target (₹)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"₹{row['Target (₹)']:,.0f}", axis=1)
+            df_disp["Distance (%)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"{row['Distance (%)']}%", axis=1)
             return df_disp
 
         def highlight_action(s):
@@ -204,6 +257,7 @@ if st.button("🚀 Run Command Center Scan"):
             elif '🟠' in s['Action']: return ['background-color: rgba(255, 165, 0, 0.2)'] * len(s)
             elif '☠️' in s['Action']: return ['background-color: rgba(0, 0, 0, 0.8); color: white'] * len(s)
             elif 'GLITCH' in s['Action']: return ['background-color: rgba(128, 128, 128, 0.3)'] * len(s)
+            elif '🚀' in s['Action']: return ['background-color: rgba(147, 112, 219, 0.3)'] * len(s)
             return [''] * len(s)
 
         # --- TIER 1: THIS MONTH'S SIP EXECUTION ---
@@ -220,8 +274,63 @@ if st.button("🚀 Run Command Center Scan"):
         st.subheader("🛡️ The 6-Stock Fortress Radar")
         st.write("Complete fundamental health check and exit strategy monitoring.")
         st.dataframe(format_df(df_fortress).style.apply(highlight_action, axis=1), use_container_width=True)
+        
+        # --- TIER 3: FAMILY PORTFOLIOS (NEW) ---
+        st.markdown("---")
+        st.subheader("👨‍👩‍👦 Family Portfolios (Son & Wife)")
+        st.write("Special tracking dashboard displaying real-time P&L along with core fundamental metrics.")
+        
+        df_family = df_all[df_all["Ticker"].isin(family_portfolio.keys())].copy()
+        
+        if not df_family.empty:
+            df_family["Qty"] = df_family["Ticker"].map(lambda t: family_portfolio[t]["Qty"])
+            df_family["Entry Price"] = df_family["Ticker"].map(lambda t: family_portfolio[t]["Entry Price"])
+            
+            df_family["Invested"] = df_family["Qty"] * df_family["Entry Price"]
+            df_family["Current Value"] = df_family["Qty"] * df_family["Live Price"]
+            df_family["P&L (%)"] = ((df_family["Live Price"] - df_family["Entry Price"]) / df_family["Entry Price"]) * 100
+            
+            cols_order = ["Stock", "Qty", "Entry Price", "Live Price", "Invested", "Current Value", "P&L (%)", "Buffett Score", "Fair P/E", "Target (₹)", "Distance (%)", "Action"]
+            df_family_disp = df_family[cols_order].sort_values(by="P&L (%)", ascending=False).reset_index(drop=True)
+            
+            def highlight_family(s):
+                row_styles = [''] * len(s)
+                if '✅' in s['Action']: row_styles = ['background-color: rgba(0, 255, 0, 0.2)'] * len(s)
+                elif '⚠️' in s['Action']: row_styles = ['background-color: rgba(255, 255, 0, 0.2)'] * len(s)
+                elif '🔥' in s['Action']: row_styles = ['background-color: rgba(255, 0, 0, 0.4)'] * len(s)
+                elif '🚨' in s['Action']: row_styles = ['background-color: rgba(255, 100, 0, 0.3)'] * len(s)
+                elif '🟠' in s['Action']: row_styles = ['background-color: rgba(255, 165, 0, 0.2)'] * len(s)
+                elif '☠️' in s['Action']: row_styles = ['background-color: rgba(0, 0, 0, 0.8); color: white'] * len(s)
+                elif 'GLITCH' in s['Action']: row_styles = ['background-color: rgba(128, 128, 128, 0.3)'] * len(s)
+                elif '📈' in s['Action']: row_styles = ['background-color: rgba(173, 216, 230, 0.4)'] * len(s)
+                elif '🚀' in s['Action']: row_styles = ['background-color: rgba(147, 112, 219, 0.3)'] * len(s)
+                
+                try:
+                    pnl_idx = s.index.get_loc('P&L (%)')
+                    pnl_str = str(s['P&L (%)']).replace('%', '').replace('+', '')
+                    pnl_val = float(pnl_str)
+                    if pnl_val > 0:
+                        row_styles[pnl_idx] = 'color: #00FF00; font-weight: bold'
+                    elif pnl_val < 0:
+                        row_styles[pnl_idx] = 'color: #FF0000; font-weight: bold'
+                except:
+                    pass
+                return row_styles
 
-        # --- TIER 3: ELITE NIFTY 50 DISCOVERY ---
+            df_family_disp["Entry Price"] = df_family_disp["Entry Price"].apply(lambda x: f"₹{x:,.2f}")
+            df_family_disp["Live Price"] = df_family_disp["Live Price"].apply(lambda x: f"₹{x:,.2f}")
+            df_family_disp["Invested"] = df_family_disp["Invested"].apply(lambda x: f"₹{x:,.0f}")
+            df_family_disp["Current Value"] = df_family_disp["Current Value"].apply(lambda x: f"₹{x:,.0f}")
+            df_family_disp["P&L (%)"] = df_family_disp["P&L (%)"].apply(lambda x: f"{x:+.2f}%")
+            df_family_disp["Fair P/E"] = df_family_disp.apply(lambda row: "N/A" if row["Fair P/E"] == 0 else row["Fair P/E"], axis=1)
+            df_family_disp["Target (₹)"] = df_family_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"₹{row['Target (₹)']:,.0f}", axis=1)
+            df_family_disp["Distance (%)"] = df_family_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"{row['Distance (%)']}%", axis=1)
+
+            st.dataframe(df_family_disp.style.apply(highlight_family, axis=1), use_container_width=True)
+        else:
+            st.info("Family portfolio data is currently loading or unavailable.")
+
+        # --- TIER 4: ELITE NIFTY 50 DISCOVERY ---
         st.markdown("---")
         st.subheader("🦅 Elite Discovery Zone (Noise Filtered)")
         st.write("Broader market scan showing only the purest, non-cyclical compounders scoring >= 20/30.")
