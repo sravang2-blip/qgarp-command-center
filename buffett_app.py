@@ -1,9 +1,8 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import requests
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v4.3", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center", layout="wide")
 
 # --- GLOBAL CONFIGURATIONS & DICTIONARIES ---
 CORE_PORTFOLIO = [
@@ -66,23 +65,9 @@ BASE_SECTOR_MULTIPLIERS = {
 st.sidebar.image("https://img.icons8.com/color/96/000000/combo-chart--v1.png", width=60)
 st.sidebar.title("System Controls")
 sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=5000, step=1000)
-st.sidebar.caption("The engine dynamically weights capital across Buy Zone stocks based on Quality AND depth of discount, capped at 50% max exposure per stock.")
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("📲 Telegram Alerts")
-tg_token = st.sidebar.text_input("Bot Token", type="password", help="Create a bot with @BotFather on Telegram to get this.")
-tg_chat_id = st.sidebar.text_input("Chat ID", type="password", help="Get your Chat ID from @userinfobot on Telegram.")
-enable_tg = st.sidebar.checkbox("Auto-send alerts on scan")
+st.sidebar.caption("The engine dynamically weights capital across Buy Zone stocks based on Quality AND the depth of their discount, capped at 50% max exposure per stock.")
 
 # --- UI HELPER FUNCTIONS ---
-def send_telegram_message(bot_token, chat_id, text):
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload)
-    except:
-        pass
-
 def safe_float(info_dict, key, default=0.0):
     try:
         val = info_dict.get(key)
@@ -101,6 +86,7 @@ def format_df(df):
     df_disp["Target (₹)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"₹{row['Target (₹)']:,.0f}", axis=1)
     df_disp["Distance (%)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"{row['Distance (%)']}%", axis=1)
     
+    # INDESTRUCTIBLE COLUMN REORDERING
     if "Allocation (₹)" in df_disp.columns:
         df_disp["Allocation (₹)"] = df_disp["Allocation (₹)"].apply(lambda x: f"₹{x:,.0f}")
         cols = list(df_disp.columns)
@@ -322,7 +308,7 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's QGARP Command Center v4.3")
+st.title("🏛️ Sravan's QGARP Command Center")
 st.write("Execution at the top, portfolio health in the middle, and pure, noise-free market discovery at the bottom.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
@@ -371,18 +357,6 @@ if st.button("🚀 Run Command Center Scan"):
             total_invested = df_family["Invested"].sum()
             total_current = df_family["Current Value"].sum()
             total_pnl_pct = ((total_current - total_invested) / total_invested) * 100 if total_invested > 0 else 0.0
-
-        # --- TELEGRAM NOTIFICATION EXECUTION ---
-        if enable_tg and tg_token and tg_chat_id:
-            if not df_sip.empty:
-                tg_msg = f"🚨 *QGARP Buy Zone Alert* 🚨\n\nTarget Deployment: *₹{sip_capital:,.0f}*\n\n"
-                for _, row in df_sip.iterrows():
-                    tg_msg += f"• *{row['Stock']}*: ₹{row['Allocation (₹)']:,.0f} (Target: ₹{row['Target (₹)']:,.0f} | Dist: {row['Distance (%)']}%)\n"
-                send_telegram_message(tg_token, tg_chat_id, tg_msg)
-                st.toast("Telegram alert sent successfully!", icon="✅")
-            else:
-                send_telegram_message(tg_token, tg_chat_id, "ℹ️ *QGARP Update*: Scan completed. No core stocks in the Buy Zone today. Hold Dry Powder.")
-                st.toast("Telegram hold alert sent.", icon="ℹ️")
 
         # --- EXECUTIVE PORTFOLIO SUMMARY CARD ---
         st.markdown("---")
