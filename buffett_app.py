@@ -1,13 +1,73 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import time
 
-st.set_page_config(page_title="Sravan's QGARP Command Center", layout="wide")
-st.title("🏛️ Sravan's 3-Tier QGARP Command Center")
-st.write("Execution at the top, portfolio health in the middle, and pure, noise-free market discovery at the bottom.")
+st.set_page_config(page_title="Sravan's QGARP Command Center v4.2", layout="wide")
 
-# --- SAFE FLOAT ---
+# --- GLOBAL CONFIGURATIONS & DICTIONARIES ---
+CORE_PORTFOLIO = [
+    "ASIANPAINT.NS", "NESTLEIND.NS", "PIDILITIND.NS", "HDFCBANK.NS", "TCS.NS", "ITC.NS"
+]
+
+FAMILY_PORTFOLIO = {
+    "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
+    "IREDA.NS": {"Qty": 480, "Entry Price": 141.37},     
+    "KPIGREEN.NS": {"Qty": 93, "Entry Price": 486.57},   
+    "SUZLON.NS": {"Qty": 302, "Entry Price": 46.52},     
+    "KEC.NS": {"Qty": 78, "Entry Price": 589.67},        
+    "JUNIORBEES.NS": {"Qty": 35, "Entry Price": 722.99}, 
+    "HDFCSML250.NS": {"Qty": 157, "Entry Price": 156.25} 
+}
+
+NIFTY_TICKERS = [
+    "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS", 
+    "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS", 
+    "BRITANNIA.NS", "CIPLA.NS", "COALINDIA.NS", "DIVISLAB.NS", "DRREDDY.NS", 
+    "EICHERMOT.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS", "HDFCLIFE.NS", 
+    "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "ICICIBANK.NS", "ITC.NS", 
+    "INDUSINDBK.NS", "INFY.NS", "JSWSTEEL.NS", "KOTAKBANK.NS", "LT.NS", 
+    "LTIM.NS", "M&M.NS", "MARUTI.NS", "NTPC.NS", "NESTLEIND.NS", "ONGC.NS", 
+    "POWERGRID.NS", "RELIANCE.NS", "SBILIFE.NS", "SBIN.NS", "SUNPHARMA.NS", 
+    "TCS.NS", "TATACONSUM.NS", "TATAMOTORS.NS", "TATASTEEL.NS", "TECHM.NS", 
+    "TITAN.NS", "TRENT.NS", "ULTRACEMCO.NS", "WIPRO.NS"
+]
+
+EXCLUDE_LIST = [
+    "COALINDIA.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "BPCL.NS", "SBIN.NS", 
+    "TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", 
+    "TATAMOTORS.NS", "M&M.NS", "MARUTI.NS", "HEROMOTOCO.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS", 
+    "ADANIENT.NS", "ADANIPORTS.NS" 
+]
+
+SCAN_LIST = CORE_PORTFOLIO + list(FAMILY_PORTFOLIO.keys()) + [t for t in NIFTY_TICKERS if t not in CORE_PORTFOLIO and t not in FAMILY_PORTFOLIO.keys() and t not in EXCLUDE_LIST]
+
+CORE_OVERRIDES = {
+    "TCS.NS": 0.60, "HDFCBANK.NS": 0.65, "ITC.NS": 0.54,
+    "NESTLEIND.NS": 2.00, "ASIANPAINT.NS": 1.80, "PIDILITIND.NS": 1.80
+}
+
+FAMILY_OVERRIDES = {
+    "IREDA.NS": 0.60, "KPIGREEN.NS": 0.65, "SUZLON.NS": 0.65,
+    "KEC.NS": 0.85, "ATHERENERG.NS": 1.00
+}
+
+BASE_SECTOR_MULTIPLIERS = {
+    "Consumer Defensive": 1.20,
+    "Consumer Cyclical": 1.00,
+    "Communication Services": 1.00,
+    "Industrials": 1.00,
+    "Financial Services": 0.55,
+    "Technology": 0.60,
+    "Healthcare": 1.20
+}
+
+# --- SIDEBAR CONFIGURATION ---
+st.sidebar.image("https://img.icons8.com/color/96/000000/combo-chart--v1.png", width=60)
+st.sidebar.title("System Controls")
+sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=5000, step=1000)
+st.sidebar.caption("The engine dynamically weights capital across Buy Zone stocks based on Quality AND the depth of their discount, capped at 50% max exposure per stock.")
+
+# --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
     try:
         val = info_dict.get(key)
@@ -17,7 +77,6 @@ def safe_float(info_dict, key, default=0.0):
     except (ValueError, TypeError):
         return float(default)
 
-# --- UI HELPER FUNCTIONS (PEP 8 Compliant Top-Level Scoping) ---
 def format_df(df):
     if df.empty: return df
     df_disp = df.drop(columns=["Ticker", "Numeric Score"]).sort_values(by="Buffett Score", ascending=False).reset_index(drop=True)
@@ -26,6 +85,16 @@ def format_df(df):
     df_disp["Growth (%)"] = df_disp["Growth (%)"].apply(lambda x: f"{x}%") 
     df_disp["Target (₹)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"₹{row['Target (₹)']:,.0f}", axis=1)
     df_disp["Distance (%)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"{row['Distance (%)']}%", axis=1)
+    
+    # INDESTRUCTIBLE COLUMN REORDERING
+    if "Allocation (₹)" in df_disp.columns:
+        df_disp["Allocation (₹)"] = df_disp["Allocation (₹)"].apply(lambda x: f"₹{x:,.0f}")
+        cols = list(df_disp.columns)
+        cols.remove("Allocation (₹)")
+        insert_idx = cols.index("Action") if "Action" in cols else len(cols)
+        cols.insert(insert_idx, "Allocation (₹)")
+        df_disp = df_disp[cols]
+        
     return df_disp
 
 def highlight_action(s):
@@ -65,7 +134,7 @@ def highlight_family(s):
 
 # --- CACHING & BATCH FETCH ---
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_market_data(scan_list_param, core_port_param, family_port_param):
+def fetch_market_data(scan_list_param):
     all_data = []
     errors = []
     
@@ -112,10 +181,12 @@ def fetch_market_data(scan_list_param, core_port_param, family_port_param):
             if growth == 0:
                 growth = safe_float(info, 'revenueGrowth', 0.0) * 100
                 
+            fcf = safe_float(info, 'freeCashflow', 0.0)
+                
             sector = info.get('sector', '')
             industry = info.get('industry', '')
 
-            # --- 1. THE QUALITY ENGINE ---
+            # --- 1. THE QUALITY ENGINE (Proven v3.0 Moat Logic) ---
             moat_score = (roe / 4) + (profit_margin / 4)
             moat_score = min(10.0, max(0.0, moat_score))
             
@@ -131,12 +202,9 @@ def fetch_market_data(scan_list_param, core_port_param, family_port_param):
             cons_score = 0.0
             if eps > 0: cons_score += 2
             if profit_margin > 10: cons_score += 3
+            if fcf > 0: cons_score += 2.0 
                 
-            growth_score = 0.0
-            if growth > 25: growth_score = 5.0
-            elif growth > 15: growth_score = 3.5
-            elif growth > 8:  growth_score = 2.0
-                
+            growth_score = min(5.0, max(0.0, growth / 5.0))
             quality_score = moat_score + fin_score + cons_score + growth_score
             
             # --- 1.5. DYNAMIC GROWTH OVERRIDES ---
@@ -153,37 +221,25 @@ def fetch_market_data(scan_list_param, core_port_param, family_port_param):
             base_pe = 10 + (quality_score * 1.0)
             
             # --- 2. MULTIPLIERS & CALIBRATION ---
-            if ticker in core_port_param:
-                if ticker == "TCS.NS": sector_multiplier = 0.60
-                elif ticker == "HDFCBANK.NS": sector_multiplier = 0.65
-                elif ticker == "ITC.NS": sector_multiplier = 0.54
-                elif ticker == "NESTLEIND.NS": sector_multiplier = 2.00
-                elif ticker in ["ASIANPAINT.NS", "PIDILITIND.NS"]: sector_multiplier = 1.80
-            elif ticker in family_port_param:
-                if ticker == "IREDA.NS": sector_multiplier = 0.60
-                elif ticker == "KPIGREEN.NS": sector_multiplier = 0.65
-                elif ticker == "SUZLON.NS": sector_multiplier = 0.65
-                elif ticker == "KEC.NS": sector_multiplier = 0.85
-                elif ticker == "ATHERENERG.NS": sector_multiplier = 1.00
-                else: sector_multiplier = 1.00 
+            if ticker in CORE_OVERRIDES:
+                sector_multiplier = CORE_OVERRIDES[ticker]
+            elif ticker in FAMILY_OVERRIDES:
+                sector_multiplier = FAMILY_OVERRIDES[ticker]
+            elif ticker == 'RELIANCE.NS': 
+                sector_multiplier = 1.00 
             else:
-                if ticker == 'RELIANCE.NS': sector_multiplier = 1.00 
-                elif sector == 'Consumer Defensive':
+                sector_multiplier = BASE_SECTOR_MULTIPLIERS.get(sector, 1.00)
+                if sector == 'Consumer Defensive':
                     if industry == 'Tobacco': sector_multiplier = 0.54
                     elif roe > 50: sector_multiplier = 2.00  
                     elif roe > 15: sector_multiplier = 1.80  
-                    else: sector_multiplier = 1.20
-                elif sector == 'Consumer Cyclical' or sector == 'Communication Services':
+                elif sector in ['Consumer Cyclical', 'Communication Services']:
                     if 'Lodging' in industry or 'Travel' in industry: sector_multiplier = 0.80 
                     elif 'Internet' in industry or 'Retail' in industry or 'Restaurants' in industry: sector_multiplier = 1.50 
-                    else: sector_multiplier = 1.00 
-                elif sector == 'Industrials': sector_multiplier = 1.50 if roe > 15 else 1.00 
-                elif sector == 'Financial Services':
-                    if ticker in ['SBILIFE.NS', 'HDFCLIFE.NS']: sector_multiplier = 0.80 
-                    else: sector_multiplier = 0.55 
-                elif sector == 'Technology': sector_multiplier = 0.60  
-                elif sector == 'Healthcare': sector_multiplier = 1.20
-                else: sector_multiplier = 1.00
+                elif sector == 'Industrials' and roe > 15: 
+                    sector_multiplier = 1.50 
+                elif sector == 'Financial Services' and ticker in ['SBILIFE.NS', 'HDFCLIFE.NS']: 
+                    sector_multiplier = 0.80 
                 
             fair_pe = base_pe * sector_multiplier
             target = eps * fair_pe
@@ -251,49 +307,14 @@ def fetch_market_data(scan_list_param, core_port_param, family_port_param):
             
     return all_data, errors
 
-# --- GLOBAL PORTFOLIOS ---
-core_portfolio = [
-    "ASIANPAINT.NS", "NESTLEIND.NS", "PIDILITIND.NS", "HDFCBANK.NS", "TCS.NS", "ITC.NS"
-]
-
-family_portfolio = {
-    "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
-    "IREDA.NS": {"Qty": 480, "Entry Price": 141.37},     
-    "KPIGREEN.NS": {"Qty": 93, "Entry Price": 486.57},   
-    "SUZLON.NS": {"Qty": 302, "Entry Price": 46.52},     
-    "KEC.NS": {"Qty": 78, "Entry Price": 589.67},        
-    "JUNIORBEES.NS": {"Qty": 35, "Entry Price": 722.99}, 
-    "HDFCSML250.NS": {"Qty": 157, "Entry Price": 156.25} 
-}
-
-nifty_tickers = [
-    "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS", 
-    "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS", 
-    "BRITANNIA.NS", "CIPLA.NS", "COALINDIA.NS", "DIVISLAB.NS", "DRREDDY.NS", 
-    "EICHERMOT.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS", "HDFCLIFE.NS", 
-    "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "ICICIBANK.NS", "ITC.NS", 
-    "INDUSINDBK.NS", "INFY.NS", "JSWSTEEL.NS", "KOTAKBANK.NS", "LT.NS", 
-    "LTIM.NS", "M&M.NS", "MARUTI.NS", "NTPC.NS", "NESTLEIND.NS", "ONGC.NS", 
-    "POWERGRID.NS", "RELIANCE.NS", "SBILIFE.NS", "SBIN.NS", "SUNPHARMA.NS", 
-    "TCS.NS", "TATACONSUM.NS", "TATAMOTORS.NS", "TATASTEEL.NS", "TECHM.NS", 
-    "TITAN.NS", "TRENT.NS", "ULTRACEMCO.NS", "WIPRO.NS"
-]
-
-exclude_list = [
-    "COALINDIA.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "BPCL.NS", "SBIN.NS", 
-    "TATASTEEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", 
-    "TATAMOTORS.NS", "M&M.NS", "MARUTI.NS", "HEROMOTOCO.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS", 
-    "ADANIENT.NS", "ADANIPORTS.NS" 
-]
-
-scan_list = core_portfolio + list(family_portfolio.keys()) + [t for t in nifty_tickers if t not in core_portfolio and t not in family_portfolio.keys() and t not in exclude_list]
-
 # --- UI EXECUTION ---
+st.title("🏛️ Sravan's QGARP Command Center v4.2")
+st.write("Execution at the top, portfolio health in the middle, and pure, noise-free market discovery at the bottom.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
 if st.button("🚀 Run Command Center Scan"):
     with st.spinner("Fetching batch market data (this will be instantly cached for 1 hour)..."):
-        all_data, errors = fetch_market_data(scan_list, core_portfolio, family_portfolio)
+        all_data, errors = fetch_market_data(SCAN_LIST)
         
     if errors:
         st.warning(f"API Disruptions: Failed to fetch {len(errors)} tickers. ({', '.join(errors[:3])}...)")
@@ -302,26 +323,43 @@ if st.button("🚀 Run Command Center Scan"):
         df_all = pd.DataFrame(all_data)
         
         # --- LOGIC SPLITS ---
-        df_fortress = df_all[df_all["Ticker"].isin(core_portfolio)].copy()
+        df_fortress = df_all[df_all["Ticker"].isin(CORE_PORTFOLIO)].copy()
         df_sip = df_fortress[df_fortress["Action"].isin(["✅ IN BUY ZONE", "⚠️ NEAR BUY ZONE"])].copy()
         df_elite = df_all[df_all["Numeric Score"] >= 20.0].copy()
         
-        # --- PRE-CALCULATE FAMILY PORTFOLIO (DRY Principle) ---
-        df_family = df_all[df_all["Ticker"].isin(family_portfolio.keys())].copy()
+        # --- V4.2 SMART ALLOCATION ENGINE (Risk-Managed) ---
+        if not df_sip.empty:
+            # 1. Calculate Valuation Weights
+            df_sip["Valuation Weight"] = df_sip["Numeric Score"] * (1 - (df_sip["Distance (%)"].astype(float) / 100))
+            total_weight = df_sip["Valuation Weight"].sum()
+            
+            # 2. Guard against division by zero (Edge Case Protection)
+            if total_weight > 0:
+                df_sip["Allocation (₹)"] = (df_sip["Valuation Weight"] / total_weight) * sip_capital
+                
+                # 3. THE CONCENTRATION CAP: Max 50% of SIP into any single stock
+                max_alloc = sip_capital * 0.50
+                df_sip["Allocation (₹)"] = df_sip["Allocation (₹)"].clip(upper=max_alloc)
+            else:
+                df_sip["Allocation (₹)"] = sip_capital / len(df_sip)
+                
+            df_sip = df_sip.drop(columns=["Valuation Weight"]) 
+        
+        # --- PRE-CALCULATE FAMILY PORTFOLIO ---
+        df_family = df_all[df_all["Ticker"].isin(FAMILY_PORTFOLIO.keys())].copy()
         total_invested = 0
         total_current = 0
         total_pnl_pct = 0.0
         
         if not df_family.empty:
-            df_family["Qty"] = df_family["Ticker"].map(lambda t: family_portfolio[t]["Qty"])
-            df_family["Entry Price"] = df_family["Ticker"].map(lambda t: family_portfolio[t]["Entry Price"])
+            df_family["Qty"] = df_family["Ticker"].map(lambda t: FAMILY_PORTFOLIO[t]["Qty"])
+            df_family["Entry Price"] = df_family["Ticker"].map(lambda t: FAMILY_PORTFOLIO[t]["Entry Price"])
             df_family["Invested"] = df_family["Qty"] * df_family["Entry Price"]
             df_family["Current Value"] = df_family["Qty"] * df_family["Live Price"]
             df_family["P&L (%)"] = ((df_family["Live Price"] - df_family["Entry Price"]) / df_family["Entry Price"]) * 100
             
             total_invested = df_family["Invested"].sum()
             total_current = df_family["Current Value"].sum()
-            # Guard against division by zero
             total_pnl_pct = ((total_current - total_invested) / total_invested) * 100 if total_invested > 0 else 0.0
 
         # --- EXECUTIVE PORTFOLIO SUMMARY CARD ---
@@ -336,10 +374,10 @@ if st.button("🚀 Run Command Center Scan"):
             
         buy_zone_count = len(df_sip)
         delta_str = f"{buy_zone_count} in Buy Zone" if buy_zone_count > 0 else "None in Buy Zone"
-        col2.metric("Core Fortress Status", f"{buy_zone_count} / {len(core_portfolio)}", delta_str, delta_color="off")
+        col2.metric("Core Fortress Status", f"{buy_zone_count} / {len(CORE_PORTFOLIO)}", delta_str, delta_color="off")
         
         if buy_zone_count > 0:
-            col3.metric("Capital Deployment", "EXECUTE SIP", "Deploy to Core", delta_color="normal")
+            col3.metric("Capital Deployment", "EXECUTE SIP", f"₹{sip_capital:,.0f} to Core", delta_color="normal")
         else:
             col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Liquid Funds", delta_color="inverse")
             
@@ -348,8 +386,8 @@ if st.button("🚀 Run Command Center Scan"):
 
         # --- TIER 1: THIS MONTH'S SIP EXECUTION ---
         st.markdown("---")
-        st.subheader("💰 This Month's SIP Execution")
-        st.write("Deploy ₹5,000 strictly into these core portfolio targets today.")
+        st.subheader(f"💰 This Month's SIP Execution (₹{sip_capital:,.0f})")
+        st.write("Capital allocation dynamically weighted by Quality AND Depth of Discount to maximize safety.")
         if not df_sip.empty:
             st.dataframe(format_df(df_sip).style.apply(highlight_action, axis=1), use_container_width=True)
         else:
