@@ -1,5 +1,4 @@
 streamlit
+yfinance
 pandas
-altair<5
-yfinance>=0.2.64
-curl_cffi
+matplotlib
