@@ -64,7 +64,7 @@ BASE_SECTOR_MULTIPLIERS = {
 # --- SIDEBAR CONFIGURATION ---
 st.sidebar.image("https://img.icons8.com/color/96/000000/combo-chart--v1.png", width=60)
 st.sidebar.title("System Controls")
-sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=5000, step=1000)
+sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=30000, step=1000)
 st.sidebar.caption("The engine dynamically weights capital across Buy Zone stocks based on Quality AND the depth of their discount, capped at 50% max exposure per stock.")
 
 # --- UI HELPER FUNCTIONS ---
