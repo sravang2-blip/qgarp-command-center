@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
         "ITC.NS": {"Qty": 80}
     },
     "DEBT_HOLDINGS": {
-        "SBI Arbitrage Fund": {"Ticker": "0P0000XVJE.BO", "Qty": 150.00, "Fallback_NAV": 30.50} 
+        "SBI Arbitrage Fund": {"Ticker": "0P0000XVJE.BO", "Qty": 0.000, "Fallback_NAV": 30.50} 
     }
 }
 
