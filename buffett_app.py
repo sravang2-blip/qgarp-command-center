@@ -2,12 +2,20 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Sravan's QGARP Command Center", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v6.0", layout="wide")
 
 # --- GLOBAL CONFIGURATIONS & DICTIONARIES ---
-CORE_PORTFOLIO = [
-    "ASIANPAINT.NS", "NESTLEIND.NS", "PIDILITIND.NS", "HDFCBANK.NS", "TCS.NS", "ITC.NS"
-]
+
+# CORE_HOLDINGS (Updated with Sravan's real Demat quantities)
+CORE_HOLDINGS = {
+    "ASIANPAINT.NS": {"Qty": 11}, 
+    "NESTLEIND.NS": {"Qty": 20}, 
+    "PIDILITIND.NS": {"Qty": 17}, 
+    "HDFCBANK.NS": {"Qty": 28}, 
+    "TCS.NS": {"Qty": 10}, 
+    "ITC.NS": {"Qty": 80}
+}
+CORE_PORTFOLIO = list(CORE_HOLDINGS.keys())
 
 FAMILY_PORTFOLIO = {
     "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
@@ -64,8 +72,8 @@ BASE_SECTOR_MULTIPLIERS = {
 # --- SIDEBAR CONFIGURATION ---
 st.sidebar.image("https://img.icons8.com/color/96/000000/combo-chart--v1.png", width=60)
 st.sidebar.title("System Controls")
-sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=30000, step=1000)
-st.sidebar.caption("The engine dynamically weights capital across Buy Zone stocks based on Quality AND the depth of their discount, capped at 50% max exposure per stock.")
+sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=30000, step=5000)
+st.sidebar.caption("v6.0 Execution Engine dynamically routes capital to Buy Zone stocks based on Quality, Discount, and Portfolio Deviation, outputting clean broker-ready share counts.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -77,23 +85,28 @@ def safe_float(info_dict, key, default=0.0):
     except (ValueError, TypeError):
         return float(default)
 
-def format_df(df):
+def format_df(df, drop_score=True):
     if df.empty: return df
-    df_disp = df.drop(columns=["Ticker", "Numeric Score"]).sort_values(by="Buffett Score", ascending=False).reset_index(drop=True)
-    df_disp["Live Price"] = df_disp["Live Price"].apply(lambda x: f"₹{x:,.2f}")
-    df_disp["Live EPS"] = df_disp["Live EPS"].apply(lambda x: "N/A" if x <= 0 else f"₹{x:,.2f}")
-    df_disp["Growth (%)"] = df_disp["Growth (%)"].apply(lambda x: f"{x}%") 
-    df_disp["Target (₹)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"₹{row['Target (₹)']:,.0f}", axis=1)
-    df_disp["Distance (%)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"{row['Distance (%)']}%", axis=1)
     
-    # INDESTRUCTIBLE COLUMN REORDERING
-    if "Allocation (₹)" in df_disp.columns:
-        df_disp["Allocation (₹)"] = df_disp["Allocation (₹)"].apply(lambda x: f"₹{x:,.0f}")
-        cols = list(df_disp.columns)
-        cols.remove("Allocation (₹)")
-        insert_idx = cols.index("Action") if "Action" in cols else len(cols)
-        cols.insert(insert_idx, "Allocation (₹)")
-        df_disp = df_disp[cols]
+    cols_to_drop = ["Ticker"]
+    if drop_score and "Numeric Score" in df.columns:
+        cols_to_drop.append("Numeric Score")
+        
+    df_disp = df.drop(columns=[col for col in cols_to_drop if col in df.columns]).sort_values(by="Buffett Score", ascending=False).reset_index(drop=True)
+    
+    if "Live Price" in df_disp.columns: df_disp["Live Price"] = df_disp["Live Price"].apply(lambda x: f"₹{x:,.2f}")
+    if "Live EPS" in df_disp.columns: df_disp["Live EPS"] = df_disp["Live EPS"].apply(lambda x: "N/A" if x <= 0 else f"₹{x:,.2f}")
+    if "Growth (%)" in df_disp.columns: df_disp["Growth (%)"] = df_disp["Growth (%)"].apply(lambda x: f"{x}%") 
+    if "Target (₹)" in df_disp.columns: df_disp["Target (₹)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"₹{row['Target (₹)']:,.0f}", axis=1)
+    if "Distance (%)" in df_disp.columns: df_disp["Distance (%)"] = df_disp.apply(lambda row: "N/A" if ("ETF" in row["Action"] or "PRE-PROFIT" in row["Action"]) else f"{row['Distance (%)']}%", axis=1)
+    
+    if "Actual Wt (%)" in df_disp.columns: df_disp["Actual Wt (%)"] = df_disp["Actual Wt (%)"].apply(lambda x: f"{x:.2f}%")
+    if "Target Wt (%)" in df_disp.columns: df_disp["Target Wt (%)"] = df_disp["Target Wt (%)"].apply(lambda x: f"{x:.2f}%")
+    if "Deviation (%)" in df_disp.columns: df_disp["Deviation (%)"] = df_disp["Deviation (%)"].apply(lambda x: f"{x:+.2f}%")
+    if "Numeric Score" in df_disp.columns: df_disp["Numeric Score"] = df_disp["Numeric Score"].apply(lambda x: f"{x:.1f}")
+    
+    if "Executed (₹)" in df_disp.columns:
+        df_disp["Executed (₹)"] = df_disp["Executed (₹)"].apply(lambda x: f"₹{x:,.2f}")
         
     return df_disp
 
@@ -308,12 +321,12 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's QGARP Command Center")
-st.write("Execution at the top, portfolio health in the middle, and pure, noise-free market discovery at the bottom.")
+st.title("🏛️ Sravan's Unified Command Center v6.0")
+st.write("Screener, Rebalance Engine, and Execution Protocol fused. Outputting clean, broker-ready share counts.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
 if st.button("🚀 Run Command Center Scan"):
-    with st.spinner("Fetching batch market data (this will be instantly cached for 1 hour)..."):
+    with st.spinner("Fetching batch market data and calculating broker execution orders..."):
         all_data, errors = fetch_market_data(SCAN_LIST)
         
     if errors:
@@ -322,24 +335,64 @@ if st.button("🚀 Run Command Center Scan"):
     if all_data:
         df_all = pd.DataFrame(all_data)
         
-        # --- LOGIC SPLITS ---
+        # --- THE v6.0 UNIFIED REBALANCE ENGINE ---
         df_fortress = df_all[df_all["Ticker"].isin(CORE_PORTFOLIO)].copy()
-        df_sip = df_fortress[df_fortress["Action"].isin(["✅ IN BUY ZONE", "⚠️ NEAR BUY ZONE"])].copy()
         df_elite = df_all[df_all["Numeric Score"] >= 20.0].copy()
         
-        # --- V4.2 SMART ALLOCATION ENGINE (Risk-Managed) ---
+        # 1. Map Current Holdings
+        df_fortress["Qty"] = df_fortress["Ticker"].map(lambda t: CORE_HOLDINGS.get(t, {}).get("Qty", 0))
+        df_fortress["Current Value (₹)"] = df_fortress["Qty"] * df_fortress["Live Price"]
+        total_fortress_value = df_fortress["Current Value (₹)"].sum()
+        
+        # 2. Calculate Actual vs. Target Weights
+        if total_fortress_value > 0:
+            df_fortress["Actual Wt (%)"] = (df_fortress["Current Value (₹)"] / total_fortress_value) * 100
+        else:
+            df_fortress["Actual Wt (%)"] = 100 / len(CORE_PORTFOLIO)
+            
+        total_quality = df_fortress["Numeric Score"].sum()
+        df_fortress["Target Wt (%)"] = (df_fortress["Numeric Score"] / total_quality) * 100
+        df_fortress["Deviation (%)"] = df_fortress["Actual Wt (%)"] - df_fortress["Target Wt (%)"]
+        
+        # 3. Filter for SIP Eligible Stocks (Must be in Buy/Near Buy Zone)
+        df_sip = df_fortress[df_fortress["Action"].isin(["✅ IN BUY ZONE", "⚠️ NEAR BUY ZONE"])].copy()
+        
+        total_executed_value = 0.0
+        dry_powder_generated = sip_capital
+
         if not df_sip.empty:
-            df_sip["Valuation Weight"] = df_sip["Numeric Score"] * (1 - (df_sip["Distance (%)"].astype(float) / 100))
-            total_weight = df_sip["Valuation Weight"].sum()
+            # Base Valuation Weight
+            df_sip["Val_Weight"] = df_sip["Numeric Score"] * (1 - (df_sip["Distance (%)"].astype(float) / 100))
+            
+            # The Magic Rebalance Multiplier: (Target / Actual). 
+            df_sip["Reb_Mult"] = (df_sip["Target Wt (%)"] / df_sip["Actual Wt (%)"].clip(lower=1.0)).clip(0.1, 3.0)
+            
+            # Fused Final Weight calculation
+            df_sip["Final_Weight"] = df_sip["Val_Weight"] * df_sip["Reb_Mult"]
+            total_weight = df_sip["Final_Weight"].sum()
             
             if total_weight > 0:
-                df_sip["Allocation (₹)"] = (df_sip["Valuation Weight"] / total_weight) * sip_capital
-                max_alloc = sip_capital * 0.50
-                df_sip["Allocation (₹)"] = df_sip["Allocation (₹)"].clip(upper=max_alloc)
-            else:
-                df_sip["Allocation (₹)"] = sip_capital / len(df_sip)
+                df_sip["Raw_Allocation"] = (df_sip["Final_Weight"] / total_weight) * sip_capital
                 
-            df_sip = df_sip.drop(columns=["Valuation Weight"]) 
+                # 50% Absolute Concentration Cap
+                max_alloc = sip_capital * 0.50
+                df_sip["Raw_Allocation"] = df_sip["Raw_Allocation"].clip(upper=max_alloc)
+            else:
+                df_sip["Raw_Allocation"] = sip_capital / len(df_sip)
+
+            # --- V6.0 BROKER EXECUTION MATH ---
+            # Calculate exactly how many full shares we can buy
+            df_sip["Shares to Buy"] = (df_sip["Raw_Allocation"] // df_sip["Live Price"]).astype(int)
+            
+            # Calculate the exact Rupee amount those shares will cost
+            df_sip["Executed (₹)"] = df_sip["Shares to Buy"] * df_sip["Live Price"]
+            
+            # Drop the theoretical decimals, keep only the executable reality
+            df_sip = df_sip.drop(columns=["Val_Weight", "Reb_Mult", "Final_Weight", "Raw_Allocation"]) 
+            
+            # Calculate the final Dry Powder
+            total_executed_value = df_sip["Executed (₹)"].sum()
+            dry_powder_generated = sip_capital - total_executed_value
 
         # --- PRE-CALCULATE FAMILY PORTFOLIO ---
         df_family = df_all[df_all["Ticker"].isin(FAMILY_PORTFOLIO.keys())].copy()
@@ -373,27 +426,41 @@ if st.button("🚀 Run Command Center Scan"):
         col2.metric("Core Fortress Status", f"{buy_zone_count} / {len(CORE_PORTFOLIO)}", delta_str, delta_color="off")
         
         if buy_zone_count > 0:
-            col3.metric("Capital Deployment", "EXECUTE SIP", f"₹{sip_capital:,.0f} to Core", delta_color="normal")
+            col3.metric("Executed Capital", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Liquid Fund", delta_color="normal")
         else:
             col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Liquid Funds", delta_color="inverse")
             
         elite_count = len(df_elite)
         col4.metric("Elite Discoveries", f"{elite_count} Stocks", "Scoring >= 20/30", delta_color="off")
 
-        # --- TIER 1: THIS MONTH'S SIP EXECUTION ---
+        # --- TIER 1: THE UNIFIED SIP EXECUTION ALGORITHM ---
         st.markdown("---")
-        st.subheader(f"💰 This Month's SIP Execution (₹{sip_capital:,.0f})")
-        st.write("Capital allocation dynamically weighted by Quality AND Depth of Discount to maximize safety.")
+        st.subheader(f"💰 Unified Execution Desk (Target: ₹{sip_capital:,.0f})")
+        st.caption("🧠 **The Math:** The algorithm calculates the ideal portfolio balance and converts it directly into whole, executable shares.")
+        
         if not df_sip.empty:
-            st.dataframe(format_df(df_sip).style.apply(highlight_action, axis=1), use_container_width=True)
+            # We filter out rows that resulted in 0 shares to buy
+            df_active_orders = df_sip[df_sip["Shares to Buy"] > 0]
+            
+            if not df_active_orders.empty:
+                cols_to_show = ["Stock", "Live Price", "Actual Wt (%)", "Target Wt (%)", "Deviation (%)", "Distance (%)", "Buffett Score", "Shares to Buy", "Executed (₹)", "Action"]
+                df_sip_disp = format_df(df_active_orders, drop_score=True)[cols_to_show]
+                st.dataframe(df_sip_disp.style.apply(highlight_action, axis=1), use_container_width=True)
+                
+                # The New Dry Powder Sweeper Message
+                st.success(f"📈 **Execution Strategy:** Buy the exact shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** into your Dry Powder / Liquid Fund this month.")
+            else:
+                 st.info("The engine calculated the ideal distribution, but your capital wasn't enough to buy a full share of the recommended stocks this month. Sweep all capital to Dry Powder.")
         else:
             st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Liquid/Arbitrage Fund) this month.")
 
         # --- TIER 2: 6-STOCK FORTRESS RADAR ---
         st.markdown("---")
         st.subheader("🛡️ The 6-Stock Fortress Radar")
-        st.write("Complete fundamental health check and exit strategy monitoring.")
-        st.dataframe(format_df(df_fortress).style.apply(highlight_action, axis=1), use_container_width=True)
+        st.write("Complete structural overview of your core holdings, weights, and fundamental health.")
+        cols_fortress = ["Stock", "Qty", "Current Value (₹)", "Actual Wt (%)", "Target Wt (%)", "Deviation (%)", "Live Price", "Target (₹)", "Distance (%)", "Buffett Score", "Action"]
+        df_fortress_disp = format_df(df_fortress)[cols_fortress]
+        st.dataframe(df_fortress_disp.style.apply(highlight_action, axis=1), use_container_width=True)
         
         # --- TIER 3: FAMILY PORTFOLIOS ---
         st.markdown("---")
