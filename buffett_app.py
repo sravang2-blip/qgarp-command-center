@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import json
 import os
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v8.3", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v8.4", layout="wide")
 
 # --- PERSISTENT CONFIGURATION MANAGEMENT ---
 CONFIG_FILE = "portfolio_config.json"
@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
         "ITC.NS": {"Qty": 80}
     },
     "DEBT_HOLDINGS": {
-        "SBI Arbitrage Fund": {"Ticker": "0P0000XVJE.BO", "Qty": 0.000, "Fallback_NAV": 30.50} 
+        "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 0.00, "Fallback_NAV": 34.00} 
     }
 }
 
@@ -127,7 +127,7 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
             st.success("Holdings saved securely!")
             st.rerun()
 
-st.sidebar.caption("v8.3 Engine dynamically routes capital, outputs broker-ready orders, and persists your holdings seamlessly.")
+st.sidebar.caption("v8.4 Engine dynamically routes capital, outputs broker-ready orders, and persists your holdings seamlessly.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -340,7 +340,7 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's Unified Command Center v8.3")
+st.title("🏛️ Sravan's Unified Command Center v8.4")
 st.write("Complete Portfolio OS. Automating execution, rebalancing, and live Equity/Debt asset allocation.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
@@ -442,8 +442,8 @@ if st.button("🚀 Run Command Center Scan"):
         delta_str = f"{buy_zone_count} in Buy Zone" if buy_zone_count > 0 else "None in Buy Zone"
         col2.metric("Core Fortress Status", f"{buy_zone_count} / {len(CORE_PORTFOLIO)}", delta_str, delta_color="off")
         
-        if buy_zone_count > 0: col3.metric("Executed Capital", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Arbitrage Fund", delta_color="normal")
-        else: col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Arbitrage Funds", delta_color="inverse")
+        if buy_zone_count > 0: col3.metric("Executed Capital", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Liquid Fund", delta_color="normal")
+        else: col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Liquid Funds", delta_color="inverse")
             
         elite_count = len(df_elite)
         col4.metric("Elite Discoveries", f"{elite_count} Stocks", "Scoring >= 20/30", delta_color="off")
@@ -478,8 +478,7 @@ if st.button("🚀 Run Command Center Scan"):
             
             labels_sizes = [(l, s) for l, s in zip(pie_labels, pie_sizes) if s > 0]
             if total_debt_value > 0:
-                # EMOJI REMOVED HERE TO FIX THE "TOFU" RECTANGLE BUG IN MATPLOTLIB
-                labels_sizes.append(("SBI Arbitrage Fund", total_debt_value))
+                labels_sizes.append(("Kotak Arbitrage Fund", total_debt_value))
                 
             if labels_sizes:
                 labels, sizes = zip(*labels_sizes)
@@ -511,11 +510,11 @@ if st.button("🚀 Run Command Center Scan"):
                 df_sip_disp = format_df(df_active_orders, drop_score=True)[cols_to_show]
                 st.dataframe(df_sip_disp.style.apply(highlight_action, axis=1), use_container_width=True)
                 
-                st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** directly into your **SBI Arbitrage Fund**.")
+                st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** directly into your **Kotak Arbitrage Fund**.")
             else:
-                 st.info("The engine calculated the ideal distribution, but your capital wasn't enough to buy a full share of the recommended stocks this month. Sweep all capital to the SBI Arbitrage Fund.")
+                 st.info("The engine calculated the ideal distribution, but your capital wasn't enough to buy a full share of the recommended stocks this month. Sweep all capital to the Kotak Arbitrage Fund.")
         else:
-            st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (SBI Arbitrage Fund) entirely this month.")
+            st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month.")
 
         # --- TIER 2: 6-STOCK FORTRESS RADAR ---
         st.markdown("---")
