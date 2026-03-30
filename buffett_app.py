@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import json
 import os
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v8.4", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v9.1", layout="wide")
 
 # --- PERSISTENT CONFIGURATION MANAGEMENT ---
 CONFIG_FILE = "portfolio_config.json"
@@ -127,7 +127,7 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
             st.success("Holdings saved securely!")
             st.rerun()
 
-st.sidebar.caption("v8.4 Engine dynamically routes capital, outputs broker-ready orders, and persists your holdings seamlessly.")
+st.sidebar.caption("v9.1 Engine dynamically routes capital, outputs broker-ready orders, and persists your holdings seamlessly.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -340,7 +340,7 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's Unified Command Center v8.4")
+st.title("🏛️ Sravan's Unified Command Center v9.1")
 st.write("Complete Portfolio OS. Automating execution, rebalancing, and live Equity/Debt asset allocation.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
@@ -356,7 +356,10 @@ if st.button("🚀 Run Command Center Scan"):
         
         # --- REBALANCE ENGINE ---
         df_fortress = df_all[df_all["Ticker"].isin(CORE_PORTFOLIO)].copy()
-        df_elite = df_all[df_all["Numeric Score"] >= 20.0].copy()
+        
+        # ELITE DISCOVERY (Strictly restricted to Nifty 50 compounders, now including your core stocks)
+        nifty_discovery_pool = [t for t in NIFTY_TICKERS if t not in EXCLUDE_LIST]
+        df_elite = df_all[(df_all["Numeric Score"] >= 20.0) & (df_all["Ticker"].isin(nifty_discovery_pool))].copy()
         
         df_fortress["Qty"] = df_fortress["Ticker"].map(lambda t: CORE_HOLDINGS.get(t, {}).get("Qty", 0))
         df_fortress["Current Value (₹)"] = df_fortress["Qty"] * df_fortress["Live Price"]
@@ -549,8 +552,8 @@ if st.button("🚀 Run Command Center Scan"):
 
         # --- TIER 4: ELITE NIFTY 50 DISCOVERY ---
         st.markdown("---")
-        st.subheader("🦅 Elite Discovery Zone (Noise Filtered)")
-        st.write("Broader market scan showing only the purest, non-cyclical compounders scoring >= 20/30.")
+        st.subheader("🦅 Elite Discovery Zone (Pure Nifty 50 Screener)")
+        st.write("Broader market scan ranking all Nifty 50 compounders scoring >= 20/30, including your existing holdings.")
         
         if not df_elite.empty:
             st.dataframe(format_df(df_elite).style.apply(highlight_action, axis=1), use_container_width=True)
