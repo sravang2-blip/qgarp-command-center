@@ -445,8 +445,8 @@ if st.button("🚀 Run Command Center Scan"):
         delta_str = f"{buy_zone_count} in Buy Zone" if buy_zone_count > 0 else "None in Buy Zone"
         col2.metric("Core Fortress Status", f"{buy_zone_count} / {len(CORE_PORTFOLIO)}", delta_str, delta_color="off")
         
-        if buy_zone_count > 0: col3.metric("Executed Capital", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Liquid Fund", delta_color="normal")
-        else: col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Liquid Funds", delta_color="inverse")
+        if buy_zone_count > 0: col3.metric("Executed Capital", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Arbitrage Fund", delta_color="normal")
+        else: col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Arbitrage Funds", delta_color="inverse")
             
         elite_count = len(df_elite)
         col4.metric("Elite Discoveries", f"{elite_count} Stocks", "Scoring >= 20/30", delta_color="off")
