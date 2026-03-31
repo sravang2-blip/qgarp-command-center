@@ -4,13 +4,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import json
 import os
+import time
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v9.1", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v10.2", layout="wide")
 
 # --- PERSISTENT CONFIGURATION MANAGEMENT ---
 CONFIG_FILE = "portfolio_config.json"
 
-# Default baseline if the file doesn't exist yet
 DEFAULT_CONFIG = {
     "CORE_HOLDINGS": {
         "ASIANPAINT.NS": {"Qty": 11}, 
@@ -22,6 +22,15 @@ DEFAULT_CONFIG = {
     },
     "DEBT_HOLDINGS": {
         "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 0.00, "Fallback_NAV": 34.00} 
+    },
+    "FAMILY_PORTFOLIO": {
+        "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
+        "IREDA.NS": {"Qty": 480, "Entry Price": 141.37},     
+        "KPIGREEN.NS": {"Qty": 93, "Entry Price": 486.57},   
+        "SUZLON.NS": {"Qty": 302, "Entry Price": 46.52},     
+        "KEC.NS": {"Qty": 78, "Entry Price": 589.67},        
+        "JUNIORBEES.NS": {"Qty": 35, "Entry Price": 722.99}, 
+        "HDFCSML250.NS": {"Qty": 157, "Entry Price": 156.25} 
     }
 }
 
@@ -30,29 +39,22 @@ def load_config():
         with open(CONFIG_FILE, "w") as f:
             json.dump(DEFAULT_CONFIG, f, indent=4)
         return DEFAULT_CONFIG
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, KeyError):
+        st.warning("⚠️ Local configuration file corrupted or unreadable. Safely reverting to default parameters.")
+        return DEFAULT_CONFIG
 
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=4)
 
-# Load the live data from the JSON file
 app_config = load_config()
-CORE_HOLDINGS = app_config["CORE_HOLDINGS"]
-DEBT_HOLDINGS = app_config["DEBT_HOLDINGS"]
+CORE_HOLDINGS = app_config.get("CORE_HOLDINGS", DEFAULT_CONFIG["CORE_HOLDINGS"])
+DEBT_HOLDINGS = app_config.get("DEBT_HOLDINGS", DEFAULT_CONFIG["DEBT_HOLDINGS"])
+FAMILY_PORTFOLIO = app_config.get("FAMILY_PORTFOLIO", DEFAULT_CONFIG["FAMILY_PORTFOLIO"])
 CORE_PORTFOLIO = list(CORE_HOLDINGS.keys())
-
-# --- FAMILY SATELLITES (Static) ---
-FAMILY_PORTFOLIO = {
-    "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
-    "IREDA.NS": {"Qty": 480, "Entry Price": 141.37},     
-    "KPIGREEN.NS": {"Qty": 93, "Entry Price": 486.57},   
-    "SUZLON.NS": {"Qty": 302, "Entry Price": 46.52},     
-    "KEC.NS": {"Qty": 78, "Entry Price": 589.67},        
-    "JUNIORBEES.NS": {"Qty": 35, "Entry Price": 722.99}, 
-    "HDFCSML250.NS": {"Qty": 157, "Entry Price": 156.25} 
-}
 
 NIFTY_TICKERS = [
     "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS", 
@@ -101,16 +103,25 @@ st.sidebar.image("https://img.icons8.com/color/96/000000/combo-chart--v1.png", w
 st.sidebar.title("System Controls")
 sip_capital = st.sidebar.number_input("Monthly SIP Capital (₹)", min_value=1000, value=30000, step=5000)
 
-# The Persistent UI logic
 with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
     with st.form("update_holdings_form"):
-        st.write("Update your core shares and fund units. Changes save permanently.")
+        st.write("Update your core shares, family portfolio, and fund units.")
         
         st.markdown("**Core Equity (Shares)**")
         new_core = {}
         for ticker, data in CORE_HOLDINGS.items():
             new_core[ticker] = {"Qty": st.number_input(ticker, min_value=0, value=int(data["Qty"]), step=1)}
             
+        st.markdown("**Family Portfolio (Shares & Entry Price)**")
+        new_family = {}
+        for ticker, data in FAMILY_PORTFOLIO.items():
+            col1, col2 = st.columns(2)
+            with col1:
+                f_qty = st.number_input(f"{ticker} Qty", min_value=0, value=int(data["Qty"]), step=1)
+            with col2:
+                f_price = st.number_input(f"{ticker} Price", min_value=0.0, value=float(data["Entry Price"]), format="%.2f")
+            new_family[ticker] = {"Qty": f_qty, "Entry Price": f_price}
+
         st.markdown("**Dry Powder (Units)**")
         new_debt = {}
         for fund, data in DEBT_HOLDINGS.items():
@@ -122,12 +133,13 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
             
         if st.form_submit_button("💾 Save Changes to Disk"):
             app_config["CORE_HOLDINGS"] = new_core
+            app_config["FAMILY_PORTFOLIO"] = new_family
             app_config["DEBT_HOLDINGS"] = new_debt
             save_config(app_config)
             st.success("Holdings saved securely!")
             st.rerun()
 
-st.sidebar.caption("v9.1 Engine dynamically routes capital, outputs broker-ready orders, and persists your holdings seamlessly.")
+st.sidebar.caption("v10.2 Engine: D/E formatting bug strictly eliminated. Mathematics completely restored.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -141,11 +153,15 @@ def safe_float(info_dict, key, default=0.0):
 
 def format_df(df, drop_score=True):
     if df.empty: return df
+    if "Numeric Score" in df.columns:
+        df = df.sort_values(by="Numeric Score", ascending=False)
+        
     cols_to_drop = ["Ticker"]
     if drop_score and "Numeric Score" in df.columns:
         cols_to_drop.append("Numeric Score")
         
-    df_disp = df.drop(columns=[col for col in cols_to_drop if col in df.columns]).sort_values(by="Buffett Score", ascending=False).reset_index(drop=True)
+    df_disp = df.drop(columns=[col for col in cols_to_drop if col in df.columns]).reset_index(drop=True)
+    
     if "Live Price" in df_disp.columns: df_disp["Live Price"] = df_disp["Live Price"].apply(lambda x: f"₹{x:,.2f}")
     if "Live EPS" in df_disp.columns: df_disp["Live EPS"] = df_disp["Live EPS"].apply(lambda x: "N/A" if x <= 0 else f"₹{x:,.2f}")
     if "Growth (%)" in df_disp.columns: df_disp["Growth (%)"] = df_disp["Growth (%)"].apply(lambda x: f"{x}%") 
@@ -200,6 +216,7 @@ def fetch_market_data(scan_list_param):
     tickers_obj = yf.Tickers(tickers_string)
     
     for i, ticker in enumerate(scan_list_param):
+        time.sleep(0.05) 
         try:
             try:
                 stock = tickers_obj.tickers[ticker]
@@ -226,17 +243,20 @@ def fetch_market_data(scan_list_param):
                 revenue_per_share = safe_float(info, 'revenuePerShare', 0.0)
                 if revenue_per_share > 0 and eps > 0: profit_margin = eps / revenue_per_share
             profit_margin = profit_margin * 100
+            
+            # --- FIXED: V10.2 Debt-To-Equity Logic ---
+            # Yahoo Finance universally returns Debt-to-Equity as a percentage (e.g. 4.5 for 4.5%)
             raw_debt = safe_float(info, 'debtToEquity', 0.0)
-            debt_eq = raw_debt / 100 if raw_debt > 1.0 else raw_debt
+            debt_eq = raw_debt / 100 
+            
             growth = safe_float(info, 'earningsGrowth', 0.0) * 100
             if growth == 0: growth = safe_float(info, 'revenueGrowth', 0.0) * 100
             fcf = safe_float(info, 'freeCashflow', 0.0)
             sector = info.get('sector', '')
             industry = info.get('industry', '')
 
-            # --- 1. THE QUALITY ENGINE ---
-            moat_score = (roe / 4) + (profit_margin / 4)
-            moat_score = min(10.0, max(0.0, moat_score))
+            moat_score = min(5.0, max(0.0, roe / 4)) + min(5.0, max(0.0, profit_margin / 4))
+            
             fin_score = 0.0
             if roe > 25: fin_score += 5
             elif roe > 15: fin_score += 3
@@ -244,6 +264,7 @@ def fetch_market_data(scan_list_param):
             else:
                 if debt_eq < 0.5: fin_score += 5
                 elif debt_eq < 1.0: fin_score += 3
+                
             cons_score = 0.0
             if eps > 0: cons_score += 2
             if profit_margin > 10: cons_score += 3
@@ -251,15 +272,19 @@ def fetch_market_data(scan_list_param):
             growth_score = min(5.0, max(0.0, growth / 5.0))
             quality_score = moat_score + fin_score + cons_score + growth_score
             
-            # --- 1.5. DYNAMIC GROWTH OVERRIDES ---
-            if ticker == "KEC.NS" and profit_margin < 8.0: quality_score += 8.0  
-            elif ticker in ["IREDA.NS", "KPIGREEN.NS"] and roe < 20.0: quality_score += 2.0  
-            elif ticker == "ATHERENERG.NS" and eps <= 0: quality_score += 5.0  
-            elif ticker == "SUZLON.NS" and debt_eq > 0.1: quality_score += 1.0  
+            is_boosted = False
+            if ticker == "KEC.NS" and profit_margin < 8.0: 
+                quality_score += 8.0; is_boosted = True  
+            elif ticker in ["IREDA.NS", "KPIGREEN.NS"] and roe < 20.0: 
+                quality_score += 2.0; is_boosted = True  
+            elif ticker == "ATHERENERG.NS" and eps <= 0: 
+                quality_score += 5.0; is_boosted = True  
+            elif ticker == "SUZLON.NS" and debt_eq > 0.1: 
+                quality_score += 1.0; is_boosted = True  
+                
             quality_score = min(25.0, quality_score)
             base_pe = 10 + (quality_score * 1.0)
             
-            # --- 2. MULTIPLIERS & CALIBRATION ---
             if ticker in CORE_OVERRIDES: sector_multiplier = CORE_OVERRIDES[ticker]
             elif ticker in FAMILY_OVERRIDES: sector_multiplier = FAMILY_OVERRIDES[ticker]
             elif ticker == 'RELIANCE.NS': sector_multiplier = 1.00 
@@ -278,7 +303,6 @@ def fetch_market_data(scan_list_param):
             fair_pe = base_pe * sector_multiplier
             target = eps * fair_pe
             
-            # --- 3. SCORING & DYNAMIC FLAGS ---
             val_score = 0.0
             is_data_glitch = False
             
@@ -319,6 +343,9 @@ def fetch_market_data(scan_list_param):
                 elif distance <= 5: status = "⚠️ NEAR BUY ZONE"
                 else: status = "⏳ WAIT"
 
+            if is_boosted:
+                status += " ⚡ BOOSTED"
+
             if (eps > 0 and price > 0) or is_etf or ticker == "ATHERENERG.NS": 
                 all_data.append({
                     "Ticker": ticker, 
@@ -335,12 +362,12 @@ def fetch_market_data(scan_list_param):
                     "Action": status
                 })
         except Exception as e:
-            errors.append(f"{ticker}: {str(e)[:50]}")
+            errors.append(f"{ticker}: {str(e)}")
             continue 
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's Unified Command Center v9.1")
+st.title("🏛️ Sravan's Unified Command Center v10.2")
 st.write("Complete Portfolio OS. Automating execution, rebalancing, and live Equity/Debt asset allocation.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
@@ -349,15 +376,16 @@ if st.button("🚀 Run Command Center Scan"):
         all_data, errors = fetch_market_data(SCAN_LIST)
         
     if errors:
-        st.warning(f"API Disruptions: Failed to fetch {len(errors)} tickers. ({', '.join(errors[:3])}...)")
+        st.warning(f"API Disruptions: Failed to fetch {len(errors)} tickers.")
+        with st.expander("View Detailed API Error Logs"):
+            for err in errors:
+                st.write(err)
         
     if all_data:
         df_all = pd.DataFrame(all_data)
         
-        # --- REBALANCE ENGINE ---
         df_fortress = df_all[df_all["Ticker"].isin(CORE_PORTFOLIO)].copy()
         
-        # ELITE DISCOVERY (Strictly restricted to Nifty 50 compounders, now including your core stocks)
         nifty_discovery_pool = [t for t in NIFTY_TICKERS if t not in EXCLUDE_LIST]
         df_elite = df_all[(df_all["Numeric Score"] >= 20.0) & (df_all["Ticker"].isin(nifty_discovery_pool))].copy()
         
@@ -374,12 +402,14 @@ if st.button("🚀 Run Command Center Scan"):
         df_fortress["Target Wt (%)"] = (df_fortress["Numeric Score"] / total_quality) * 100
         df_fortress["Deviation (%)"] = df_fortress["Actual Wt (%)"] - df_fortress["Target Wt (%)"]
         
-        df_sip = df_fortress[df_fortress["Action"].isin(["✅ IN BUY ZONE", "⚠️ NEAR BUY ZONE"])].copy()
+        df_sip = df_fortress[df_fortress["Action"].str.contains("✅ IN BUY ZONE|⚠️ NEAR BUY ZONE", regex=True, na=False)].copy()
         total_executed_value = 0.0
         dry_powder_generated = sip_capital
 
         if not df_sip.empty:
-            df_sip["Val_Weight"] = df_sip["Numeric Score"] * (1 - (df_sip["Distance (%)"].astype(float) / 100))
+            capped_distance = df_sip["Distance (%)"].astype(float).clip(lower=-30.0)
+            df_sip["Val_Weight"] = df_sip["Numeric Score"] * (1 - (capped_distance / 100))
+            
             df_sip["Reb_Mult"] = (df_sip["Target Wt (%)"] / df_sip["Actual Wt (%)"].clip(lower=1.0)).clip(0.1, 3.0)
             df_sip["Final_Weight"] = df_sip["Val_Weight"] * df_sip["Reb_Mult"]
             total_weight = df_sip["Final_Weight"].sum()
@@ -397,7 +427,6 @@ if st.button("🚀 Run Command Center Scan"):
             total_executed_value = df_sip["Executed (₹)"].sum()
             dry_powder_generated = sip_capital - total_executed_value
 
-        # --- FAMILY PORTFOLIO ---
         df_family = df_all[df_all["Ticker"].isin(FAMILY_PORTFOLIO.keys())].copy()
         total_current = 0
         total_pnl_pct = 0.0
@@ -412,7 +441,6 @@ if st.button("🚀 Run Command Center Scan"):
             total_current = df_family["Current Value"].sum()
             total_pnl_pct = ((total_current - total_invested) / total_invested) * 100 if total_invested > 0 else 0.0
 
-        # --- LIVE NAV FETCHER FOR DEBT ---
         total_debt_value = 0.0
         debt_display_data = [] 
         
@@ -433,7 +461,6 @@ if st.button("🚀 Run Command Center Scan"):
             total_debt_value += fund_value
             debt_display_data.append(f"{fund_name} (Live NAV: ₹{live_nav:.2f})")
 
-        # --- EXECUTIVE PORTFOLIO SUMMARY CARD ---
         st.markdown("---")
         st.subheader("📊 Executive Portfolio Summary")
         col1, col2, col3, col4 = st.columns(4)
@@ -451,11 +478,9 @@ if st.button("🚀 Run Command Center Scan"):
         elite_count = len(df_elite)
         col4.metric("Elite Discoveries", f"{elite_count} Stocks", "Scoring >= 20/30", delta_color="off")
 
-        # --- TIER 0: TOTAL NET WORTH ASSET ALLOCATION (RESTRICTED TO CORE + DEBT) ---
         st.markdown("---")
         st.subheader("🥧 Core Net Worth: Equity vs. Debt")
         
-        # Calculate Net Worth tracking ONLY Core 6 + Debt (Excluding Family)
         core_net_worth = total_fortress_value + total_debt_value
         
         col_pie, col_stats = st.columns([1.5, 1])
@@ -500,7 +525,6 @@ if st.button("🚀 Run Command Center Scan"):
                 ax.axis('equal')
                 st.pyplot(fig)
 
-        # --- TIER 1: THE UNIFIED SIP EXECUTION ALGORITHM ---
         st.markdown("---")
         st.subheader(f"💰 Unified Execution Desk (Target: ₹{sip_capital:,.0f})")
         st.caption("🧠 **The Math:** The algorithm calculates the ideal portfolio balance and converts it directly into whole, executable shares.")
@@ -519,7 +543,6 @@ if st.button("🚀 Run Command Center Scan"):
         else:
             st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month.")
 
-        # --- TIER 2: 6-STOCK FORTRESS RADAR ---
         st.markdown("---")
         st.subheader("🛡️ The 6-Stock Fortress Radar")
         st.write("Complete structural overview of your core holdings, weights, and fundamental health.")
@@ -527,7 +550,6 @@ if st.button("🚀 Run Command Center Scan"):
         df_fortress_disp = format_df(df_fortress)[cols_fortress]
         st.dataframe(df_fortress_disp.style.apply(highlight_action, axis=1), use_container_width=True)
         
-        # --- TIER 3: FAMILY PORTFOLIOS ---
         st.markdown("---")
         st.subheader("👨‍👩‍👦 Family Portfolios (Son & Wife)")
         st.write("Special tracking dashboard displaying real-time P&L along with core fundamental metrics.")
@@ -550,7 +572,6 @@ if st.button("🚀 Run Command Center Scan"):
         else:
             st.info("Family portfolio data is currently loading or unavailable.")
 
-        # --- TIER 4: ELITE NIFTY 50 DISCOVERY ---
         st.markdown("---")
         st.subheader("🦅 Elite Discovery Zone (Pure Nifty 50 Screener)")
         st.write("Broader market scan ranking all Nifty 50 compounders scoring >= 20/30, including your existing holdings.")
@@ -560,7 +581,6 @@ if st.button("🚀 Run Command Center Scan"):
         else:
             st.info("No discovery stocks met the strict >= 20/30 quality threshold today. The broader market is currently lacking high-quality compounders at reasonable metrics.")
 
-        # --- EXPORT MODULE ---
         st.markdown("---")
         st.subheader("💾 Export Data")
         csv_data = df_all.to_csv(index=False).encode('utf-8')
