@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v10.2", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v11.1", layout="wide")
 
 # --- PERSISTENT CONFIGURATION MANAGEMENT ---
 CONFIG_FILE = "portfolio_config.json"
@@ -139,7 +139,7 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
             st.success("Holdings saved securely!")
             st.rerun()
 
-st.sidebar.caption("v10.2 Engine: D/E formatting bug strictly eliminated. Mathematics completely restored.")
+st.sidebar.caption("v11.1 Engine: Zero-Division Armor Enabled & True QGARP Moat Score Restored.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -207,6 +207,29 @@ def highlight_family(s):
     return row_styles
 
 # --- CACHING & BATCH FETCH ---
+@st.cache_data(ttl=86400, show_spinner=False)  # 24 Hour Cache for Dividends
+def fetch_recent_dividends(owned_tickers):
+    div_data = {}
+    for ticker in owned_tickers:
+        time.sleep(0.05)
+        try:
+            stock = yf.Ticker(ticker)
+            divs = stock.dividends
+            if not divs.empty:
+                tz = divs.index.tz
+                if tz is None:
+                    cutoff = pd.Timestamp.now().tz_localize(None) - pd.Timedelta(days=30)
+                else:
+                    cutoff = pd.Timestamp.now(tz=tz) - pd.Timedelta(days=30)
+                
+                recent_divs = divs[divs.index >= cutoff]
+                div_data[ticker] = float(recent_divs.sum())
+            else:
+                div_data[ticker] = 0.0
+        except Exception:
+            div_data[ticker] = 0.0
+    return div_data
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market_data(scan_list_param):
     all_data = []
@@ -244,8 +267,6 @@ def fetch_market_data(scan_list_param):
                 if revenue_per_share > 0 and eps > 0: profit_margin = eps / revenue_per_share
             profit_margin = profit_margin * 100
             
-            # --- FIXED: V10.2 Debt-To-Equity Logic ---
-            # Yahoo Finance universally returns Debt-to-Equity as a percentage (e.g. 4.5 for 4.5%)
             raw_debt = safe_float(info, 'debtToEquity', 0.0)
             debt_eq = raw_debt / 100 
             
@@ -255,7 +276,8 @@ def fetch_market_data(scan_list_param):
             sector = info.get('sector', '')
             industry = info.get('industry', '')
 
-            moat_score = min(5.0, max(0.0, roe / 4)) + min(5.0, max(0.0, profit_margin / 4))
+            # --- FIXED: V11.1 True QGARP Moat Score Restored ---
+            moat_score = min(10.0, max(0.0, (roe / 4) + (profit_margin / 4)))
             
             fin_score = 0.0
             if roe > 25: fin_score += 5
@@ -367,13 +389,26 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's Unified Command Center v10.2")
-st.write("Complete Portfolio OS. Automating execution, rebalancing, and live Equity/Debt asset allocation.")
+st.title("🏛️ Sravan's Unified Command Center v11.1")
+st.write("Complete Portfolio OS. Automating execution, rebalancing, dividend harvesting, and asset allocation.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
 if st.button("🚀 Run Command Center Scan"):
-    with st.spinner("Fetching batch market data, live NAVs, and calculating broker execution orders..."):
+    with st.spinner("Scanning markets, harvesting dividends, and routing execution orders..."):
         all_data, errors = fetch_market_data(SCAN_LIST)
+        
+        # --- DIVIDEND HARVESTING MODULE ---
+        owned_for_divs = list(set([t for t, d in CORE_HOLDINGS.items() if d.get("Qty", 0) > 0] + 
+                                  [t for t, d in FAMILY_PORTFOLIO.items() if d.get("Qty", 0) > 0]))
+        recent_divs = fetch_recent_dividends(owned_for_divs)
+        
+        total_dividend_cash = 0.0
+        for t in CORE_PORTFOLIO:
+            total_dividend_cash += CORE_HOLDINGS.get(t, {}).get("Qty", 0) * recent_divs.get(t, 0.0)
+        for t in FAMILY_PORTFOLIO.keys():
+            total_dividend_cash += FAMILY_PORTFOLIO.get(t, {}).get("Qty", 0) * recent_divs.get(t, 0.0)
+            
+        total_deployment_capital = sip_capital + total_dividend_cash
         
     if errors:
         st.warning(f"API Disruptions: Failed to fetch {len(errors)} tickers.")
@@ -402,9 +437,14 @@ if st.button("🚀 Run Command Center Scan"):
         df_fortress["Target Wt (%)"] = (df_fortress["Numeric Score"] / total_quality) * 100
         df_fortress["Deviation (%)"] = df_fortress["Actual Wt (%)"] - df_fortress["Target Wt (%)"]
         
-        df_sip = df_fortress[df_fortress["Action"].str.contains("✅ IN BUY ZONE|⚠️ NEAR BUY ZONE", regex=True, na=False)].copy()
+        # --- FIXED: V11.1 Zero-Division Crash Guard (Filter Live Price > 0) ---
+        df_sip = df_fortress[
+            (df_fortress["Action"].str.contains("✅ IN BUY ZONE|⚠️ NEAR BUY ZONE", regex=True, na=False)) & 
+            (df_fortress["Live Price"] > 0)
+        ].copy()
+        
         total_executed_value = 0.0
-        dry_powder_generated = sip_capital
+        dry_powder_generated = total_deployment_capital
 
         if not df_sip.empty:
             capped_distance = df_sip["Distance (%)"].astype(float).clip(lower=-30.0)
@@ -415,17 +455,17 @@ if st.button("🚀 Run Command Center Scan"):
             total_weight = df_sip["Final_Weight"].sum()
             
             if total_weight > 0:
-                df_sip["Raw_Allocation"] = (df_sip["Final_Weight"] / total_weight) * sip_capital
-                max_alloc = sip_capital * 0.50
+                df_sip["Raw_Allocation"] = (df_sip["Final_Weight"] / total_weight) * total_deployment_capital
+                max_alloc = total_deployment_capital * 0.50
                 df_sip["Raw_Allocation"] = df_sip["Raw_Allocation"].clip(upper=max_alloc)
             else:
-                df_sip["Raw_Allocation"] = sip_capital / len(df_sip)
+                df_sip["Raw_Allocation"] = total_deployment_capital / len(df_sip)
 
             df_sip["Shares to Buy"] = (df_sip["Raw_Allocation"] // df_sip["Live Price"]).astype(int)
             df_sip["Executed (₹)"] = df_sip["Shares to Buy"] * df_sip["Live Price"]
             df_sip = df_sip.drop(columns=["Val_Weight", "Reb_Mult", "Final_Weight", "Raw_Allocation"]) 
             total_executed_value = df_sip["Executed (₹)"].sum()
-            dry_powder_generated = sip_capital - total_executed_value
+            dry_powder_generated = total_deployment_capital - total_executed_value
 
         df_family = df_all[df_all["Ticker"].isin(FAMILY_PORTFOLIO.keys())].copy()
         total_current = 0
@@ -463,20 +503,23 @@ if st.button("🚀 Run Command Center Scan"):
 
         st.markdown("---")
         st.subheader("📊 Executive Portfolio Summary")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
-        if not df_family.empty: col1.metric("Family Portfolio Value", f"₹{total_current:,.0f}", f"{total_pnl_pct:+.2f}%")
-        else: col1.metric("Family Portfolio Value", "N/A")
+        if not df_family.empty: col1.metric("Family Portfolio", f"₹{total_current:,.0f}", f"{total_pnl_pct:+.2f}%")
+        else: col1.metric("Family Portfolio", "N/A")
             
         buy_zone_count = len(df_sip)
         delta_str = f"{buy_zone_count} in Buy Zone" if buy_zone_count > 0 else "None in Buy Zone"
-        col2.metric("Core Fortress Status", f"{buy_zone_count} / {len(CORE_PORTFOLIO)}", delta_str, delta_color="off")
+        col2.metric("Fortress Status", f"{buy_zone_count} / {len(CORE_PORTFOLIO)}", delta_str, delta_color="off")
         
-        if buy_zone_count > 0: col3.metric("Executed Capital", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Arbitrage Fund", delta_color="normal")
-        else: col3.metric("Capital Deployment", "HOLD CASH", "Dry Powder / Arbitrage Funds", delta_color="inverse")
+        if buy_zone_count > 0: col3.metric("Capital Deployed", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Arbitrage", delta_color="normal")
+        else: col3.metric("Capital Deployed", "HOLD CASH", "All to Arbitrage", delta_color="inverse")
+            
+        if total_dividend_cash > 0: col4.metric("Dividend Harvest (30D)", f"₹{total_dividend_cash:,.0f}", "Reinvested", delta_color="normal")
+        else: col4.metric("Dividend Harvest (30D)", "₹0", "Awaiting Ex-Dates", delta_color="off")
             
         elite_count = len(df_elite)
-        col4.metric("Elite Discoveries", f"{elite_count} Stocks", "Scoring >= 20/30", delta_color="off")
+        col5.metric("Elite Discoveries", f"{elite_count} Stocks", "Scoring >= 20/30", delta_color="off")
 
         st.markdown("---")
         st.subheader("🥧 Core Net Worth: Equity vs. Debt")
@@ -526,7 +569,7 @@ if st.button("🚀 Run Command Center Scan"):
                 st.pyplot(fig)
 
         st.markdown("---")
-        st.subheader(f"💰 Unified Execution Desk (Target: ₹{sip_capital:,.0f})")
+        st.subheader(f"💰 Unified Execution Desk (Target Capital: ₹{total_deployment_capital:,.0f})")
         st.caption("🧠 **The Math:** The algorithm calculates the ideal portfolio balance and converts it directly into whole, executable shares.")
         
         if not df_sip.empty:
@@ -537,11 +580,17 @@ if st.button("🚀 Run Command Center Scan"):
                 df_sip_disp = format_df(df_active_orders, drop_score=True)[cols_to_show]
                 st.dataframe(df_sip_disp.style.apply(highlight_action, axis=1), use_container_width=True)
                 
-                st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** directly into your **Kotak Arbitrage Fund**.")
+                if total_dividend_cash > 0:
+                    st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** (which includes **₹{total_dividend_cash:,.2f}** in harvested dividends) directly into your **Kotak Arbitrage Fund**.")
+                else:
+                    st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** directly into your **Kotak Arbitrage Fund**.")
             else:
                  st.info("The engine calculated the ideal distribution, but your capital wasn't enough to buy a full share of the recommended stocks this month. Sweep all capital to the Kotak Arbitrage Fund.")
         else:
-            st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month.")
+            if total_dividend_cash > 0:
+                st.success(f"All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month. This includes **₹{total_dividend_cash:,.2f}** in harvested dividends.")
+            else:
+                st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month.")
 
         st.markdown("---")
         st.subheader("🛡️ The 6-Stock Fortress Radar")
