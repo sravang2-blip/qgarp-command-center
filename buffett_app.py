@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v11.1", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v11.2", layout="wide")
 
 # --- PERSISTENT CONFIGURATION MANAGEMENT ---
 CONFIG_FILE = "portfolio_config.json"
@@ -34,17 +34,30 @@ DEFAULT_CONFIG = {
     }
 }
 
+# --- V11.2: STATEFUL LEDGER MIGRATION ---
+def migrate_ledger(config):
+    default_date = (pd.Timestamp.now() - pd.Timedelta(days=30)).strftime('%Y-%m-%d')
+    for category in ["CORE_HOLDINGS", "FAMILY_PORTFOLIO"]:
+        if category in config:
+            for ticker, data in config[category].items():
+                if "Lifetime_Dividends" not in data:
+                    data["Lifetime_Dividends"] = 0.0
+                if "Last_Dividend_Date" not in data:
+                    data["Last_Dividend_Date"] = default_date
+    return config
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(DEFAULT_CONFIG, f, indent=4)
-        return DEFAULT_CONFIG
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, KeyError):
-        st.warning("⚠️ Local configuration file corrupted or unreadable. Safely reverting to default parameters.")
-        return DEFAULT_CONFIG
+        config = DEFAULT_CONFIG
+    else:
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                config = json.load(f)
+        except (json.JSONDecodeError, KeyError):
+            st.warning("⚠️ Local configuration file corrupted or unreadable. Safely reverting to default parameters.")
+            config = DEFAULT_CONFIG
+            
+    return migrate_ledger(config)
 
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
@@ -110,25 +123,34 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
         st.markdown("**Core Equity (Shares)**")
         new_core = {}
         for ticker, data in CORE_HOLDINGS.items():
-            new_core[ticker] = {"Qty": st.number_input(ticker, min_value=0, value=int(data["Qty"]), step=1)}
+            new_core[ticker] = {
+                "Qty": st.number_input(ticker, min_value=0, value=int(data.get("Qty", 0)), step=1),
+                "Lifetime_Dividends": data.get("Lifetime_Dividends", 0.0),
+                "Last_Dividend_Date": data.get("Last_Dividend_Date", "2026-03-01")
+            }
             
         st.markdown("**Family Portfolio (Shares & Entry Price)**")
         new_family = {}
         for ticker, data in FAMILY_PORTFOLIO.items():
             col1, col2 = st.columns(2)
             with col1:
-                f_qty = st.number_input(f"{ticker} Qty", min_value=0, value=int(data["Qty"]), step=1)
+                f_qty = st.number_input(f"{ticker} Qty", min_value=0, value=int(data.get("Qty", 0)), step=1)
             with col2:
-                f_price = st.number_input(f"{ticker} Price", min_value=0.0, value=float(data["Entry Price"]), format="%.2f")
-            new_family[ticker] = {"Qty": f_qty, "Entry Price": f_price}
+                f_price = st.number_input(f"{ticker} Price", min_value=0.0, value=float(data.get("Entry Price", 0.0)), format="%.2f")
+            new_family[ticker] = {
+                "Qty": f_qty, 
+                "Entry Price": f_price,
+                "Lifetime_Dividends": data.get("Lifetime_Dividends", 0.0),
+                "Last_Dividend_Date": data.get("Last_Dividend_Date", "2026-03-01")
+            }
 
         st.markdown("**Dry Powder (Units)**")
         new_debt = {}
         for fund, data in DEBT_HOLDINGS.items():
             new_debt[fund] = {
                 "Ticker": data["Ticker"],
-                "Qty": st.number_input(fund, min_value=0.0, value=float(data["Qty"]), step=1.0, format="%.3f"),
-                "Fallback_NAV": data["Fallback_NAV"]
+                "Qty": st.number_input(fund, min_value=0.0, value=float(data.get("Qty", 0.0)), step=1.0, format="%.3f"),
+                "Fallback_NAV": data.get("Fallback_NAV", 34.0)
             }
             
         if st.form_submit_button("💾 Save Changes to Disk"):
@@ -136,10 +158,10 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
             app_config["FAMILY_PORTFOLIO"] = new_family
             app_config["DEBT_HOLDINGS"] = new_debt
             save_config(app_config)
-            st.success("Holdings saved securely!")
+            st.success("Holdings & Ledgers saved securely!")
             st.rerun()
 
-st.sidebar.caption("v11.1 Engine: Zero-Division Armor Enabled & True QGARP Moat Score Restored.")
+st.sidebar.caption("v11.2 Engine: Final Polish. Full execution accountability & lifetime yield tracking.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -206,30 +228,6 @@ def highlight_family(s):
     except: pass
     return row_styles
 
-# --- CACHING & BATCH FETCH ---
-@st.cache_data(ttl=86400, show_spinner=False)  # 24 Hour Cache for Dividends
-def fetch_recent_dividends(owned_tickers):
-    div_data = {}
-    for ticker in owned_tickers:
-        time.sleep(0.05)
-        try:
-            stock = yf.Ticker(ticker)
-            divs = stock.dividends
-            if not divs.empty:
-                tz = divs.index.tz
-                if tz is None:
-                    cutoff = pd.Timestamp.now().tz_localize(None) - pd.Timedelta(days=30)
-                else:
-                    cutoff = pd.Timestamp.now(tz=tz) - pd.Timedelta(days=30)
-                
-                recent_divs = divs[divs.index >= cutoff]
-                div_data[ticker] = float(recent_divs.sum())
-            else:
-                div_data[ticker] = 0.0
-        except Exception:
-            div_data[ticker] = 0.0
-    return div_data
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market_data(scan_list_param):
     all_data = []
@@ -276,7 +274,6 @@ def fetch_market_data(scan_list_param):
             sector = info.get('sector', '')
             industry = info.get('industry', '')
 
-            # --- FIXED: V11.1 True QGARP Moat Score Restored ---
             moat_score = min(10.0, max(0.0, (roe / 4) + (profit_margin / 4)))
             
             fin_score = 0.0
@@ -389,26 +386,53 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's Unified Command Center v11.1")
-st.write("Complete Portfolio OS. Automating execution, rebalancing, dividend harvesting, and asset allocation.")
+st.title("🏛️ Sravan's Unified Command Center v11.2")
+st.write("Complete Portfolio OS. Automating execution, rebalancing, and stateful dividend harvesting.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
 if st.button("🚀 Run Command Center Scan"):
-    with st.spinner("Scanning markets, harvesting dividends, and routing execution orders..."):
-        all_data, errors = fetch_market_data(SCAN_LIST)
+    with st.spinner("Scanning markets, updating your Stateful Ledger, and routing orders..."):
         
-        # --- DIVIDEND HARVESTING MODULE ---
-        owned_for_divs = list(set([t for t, d in CORE_HOLDINGS.items() if d.get("Qty", 0) > 0] + 
-                                  [t for t, d in FAMILY_PORTFOLIO.items() if d.get("Qty", 0) > 0]))
-        recent_divs = fetch_recent_dividends(owned_for_divs)
+        # --- V11.2 STATEFUL DIVIDEND LEDGER MODULE ---
+        config_changed = False
+        total_dividend_cash_30d = 0.0
         
-        total_dividend_cash = 0.0
-        for t in CORE_PORTFOLIO:
-            total_dividend_cash += CORE_HOLDINGS.get(t, {}).get("Qty", 0) * recent_divs.get(t, 0.0)
-        for t in FAMILY_PORTFOLIO.keys():
-            total_dividend_cash += FAMILY_PORTFOLIO.get(t, {}).get("Qty", 0) * recent_divs.get(t, 0.0)
+        for category in ["CORE_HOLDINGS", "FAMILY_PORTFOLIO"]:
+            for ticker, data in app_config[category].items():
+                qty = data.get("Qty", 0)
+                if qty <= 0: continue
+                
+                try:
+                    time.sleep(0.05)
+                    divs = yf.Ticker(ticker).dividends
+                    if not divs.empty:
+                        divs.index = divs.index.tz_localize(None)
+                        
+                        # 1. Stateless 30D Window (For routing directly into this month's SIP pool)
+                        cutoff_30d = pd.Timestamp.now().tz_localize(None) - pd.Timedelta(days=30)
+                        recent_divs = divs[divs.index >= cutoff_30d]
+                        total_dividend_cash_30d += float(recent_divs.sum()) * qty
+                        
+                        # 2. Stateful Ledger (Updates your lifetime database forever)
+                        last_date_str = data.get("Last_Dividend_Date", "1970-01-01")
+                        last_date = pd.Timestamp(last_date_str).tz_localize(None)
+                        
+                        new_divs = divs[divs.index > last_date]
+                        if not new_divs.empty:
+                            new_cash = float(new_divs.sum()) * qty
+                            app_config[category][ticker]["Lifetime_Dividends"] += new_cash
+                            app_config[category][ticker]["Last_Dividend_Date"] = new_divs.index.max().strftime('%Y-%m-%d')
+                            config_changed = True
+                except Exception:
+                    pass
+        
+        if config_changed:
+            save_config(app_config)
             
-        total_deployment_capital = sip_capital + total_dividend_cash
+        total_deployment_capital = sip_capital + total_dividend_cash_30d
+
+        # Fetch live market data
+        all_data, errors = fetch_market_data(SCAN_LIST)
         
     if errors:
         st.warning(f"API Disruptions: Failed to fetch {len(errors)} tickers.")
@@ -426,6 +450,11 @@ if st.button("🚀 Run Command Center Scan"):
         
         df_fortress["Qty"] = df_fortress["Ticker"].map(lambda t: CORE_HOLDINGS.get(t, {}).get("Qty", 0))
         df_fortress["Current Value (₹)"] = df_fortress["Qty"] * df_fortress["Live Price"]
+        
+        # Inject Lifetime Dividends from the JSON Database
+        df_fortress["Lifetime Div (₹)"] = df_fortress["Ticker"].map(lambda t: app_config["CORE_HOLDINGS"].get(t, {}).get("Lifetime_Dividends", 0.0))
+        df_fortress["Lifetime Div (₹)"] = df_fortress["Lifetime Div (₹)"].apply(lambda x: f"₹{x:,.0f}")
+
         total_fortress_value = df_fortress["Current Value (₹)"].sum()
         
         if total_fortress_value > 0:
@@ -437,7 +466,6 @@ if st.button("🚀 Run Command Center Scan"):
         df_fortress["Target Wt (%)"] = (df_fortress["Numeric Score"] / total_quality) * 100
         df_fortress["Deviation (%)"] = df_fortress["Actual Wt (%)"] - df_fortress["Target Wt (%)"]
         
-        # --- FIXED: V11.1 Zero-Division Crash Guard (Filter Live Price > 0) ---
         df_sip = df_fortress[
             (df_fortress["Action"].str.contains("✅ IN BUY ZONE|⚠️ NEAR BUY ZONE", regex=True, na=False)) & 
             (df_fortress["Live Price"] > 0)
@@ -477,6 +505,11 @@ if st.button("🚀 Run Command Center Scan"):
             df_family["Invested"] = df_family["Qty"] * df_family["Entry Price"]
             df_family["Current Value"] = df_family["Qty"] * df_family["Live Price"]
             df_family["P&L (%)"] = ((df_family["Live Price"] - df_family["Entry Price"]) / df_family["Entry Price"]) * 100
+            
+            # Inject Lifetime Dividends
+            df_family["Lifetime Div (₹)"] = df_family["Ticker"].map(lambda t: app_config["FAMILY_PORTFOLIO"].get(t, {}).get("Lifetime_Dividends", 0.0))
+            df_family["Lifetime Div (₹)"] = df_family["Lifetime Div (₹)"].apply(lambda x: f"₹{x:,.0f}")
+
             total_invested = df_family["Invested"].sum()
             total_current = df_family["Current Value"].sum()
             total_pnl_pct = ((total_current - total_invested) / total_invested) * 100 if total_invested > 0 else 0.0
@@ -515,7 +548,7 @@ if st.button("🚀 Run Command Center Scan"):
         if buy_zone_count > 0: col3.metric("Capital Deployed", f"₹{total_executed_value:,.0f}", f"₹{dry_powder_generated:,.0f} to Arbitrage", delta_color="normal")
         else: col3.metric("Capital Deployed", "HOLD CASH", "All to Arbitrage", delta_color="inverse")
             
-        if total_dividend_cash > 0: col4.metric("Dividend Harvest (30D)", f"₹{total_dividend_cash:,.0f}", "Reinvested", delta_color="normal")
+        if total_dividend_cash_30d > 0: col4.metric("Dividend Harvest (30D)", f"₹{total_dividend_cash_30d:,.0f}", "Reinvested", delta_color="normal")
         else: col4.metric("Dividend Harvest (30D)", "₹0", "Awaiting Ex-Dates", delta_color="off")
             
         elite_count = len(df_elite)
@@ -580,22 +613,23 @@ if st.button("🚀 Run Command Center Scan"):
                 df_sip_disp = format_df(df_active_orders, drop_score=True)[cols_to_show]
                 st.dataframe(df_sip_disp.style.apply(highlight_action, axis=1), use_container_width=True)
                 
-                if total_dividend_cash > 0:
-                    st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** (which includes **₹{total_dividend_cash:,.2f}** in harvested dividends) directly into your **Kotak Arbitrage Fund**.")
+                # --- FIXED: V11.2 UI Polish (Grok's clear accounting breakdown) ---
+                if total_dividend_cash_30d > 0:
+                    st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. | **Total Executed:** ₹{total_executed_value:,.0f} | **Dry Powder to Kotak Arbitrage:** ₹{dry_powder_generated:,.0f} (includes ₹{total_dividend_cash_30d:,.0f} dividends)")
                 else:
-                    st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. Sweep the remaining **₹{dry_powder_generated:,.2f}** directly into your **Kotak Arbitrage Fund**.")
+                    st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. | **Total Executed:** ₹{total_executed_value:,.0f} | **Dry Powder to Kotak Arbitrage:** ₹{dry_powder_generated:,.0f}")
             else:
                  st.info("The engine calculated the ideal distribution, but your capital wasn't enough to buy a full share of the recommended stocks this month. Sweep all capital to the Kotak Arbitrage Fund.")
         else:
-            if total_dividend_cash > 0:
-                st.success(f"All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month. This includes **₹{total_dividend_cash:,.2f}** in harvested dividends.")
+            if total_dividend_cash_30d > 0:
+                st.success(f"All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month. This includes **₹{total_dividend_cash_30d:,.2f}** in harvested dividends.")
             else:
                 st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month.")
 
         st.markdown("---")
         st.subheader("🛡️ The 6-Stock Fortress Radar")
         st.write("Complete structural overview of your core holdings, weights, and fundamental health.")
-        cols_fortress = ["Stock", "Qty", "Current Value (₹)", "Actual Wt (%)", "Target Wt (%)", "Deviation (%)", "Live Price", "Target (₹)", "Distance (%)", "Buffett Score", "Action"]
+        cols_fortress = ["Stock", "Qty", "Current Value (₹)", "Actual Wt (%)", "Target Wt (%)", "Deviation (%)", "Live Price", "Target (₹)", "Distance (%)", "Buffett Score", "Lifetime Div (₹)", "Action"]
         df_fortress_disp = format_df(df_fortress)[cols_fortress]
         st.dataframe(df_fortress_disp.style.apply(highlight_action, axis=1), use_container_width=True)
         
@@ -604,7 +638,7 @@ if st.button("🚀 Run Command Center Scan"):
         st.write("Special tracking dashboard displaying real-time P&L along with core fundamental metrics.")
         
         if not df_family.empty:
-            cols_order = ["Stock", "Qty", "Entry Price", "Live Price", "Invested", "Current Value", "P&L (%)", "Buffett Score", "Growth (%)", "Fair P/E", "Target (₹)", "Distance (%)", "Action"]
+            cols_order = ["Stock", "Qty", "Entry Price", "Live Price", "Invested", "Current Value", "P&L (%)", "Buffett Score", "Growth (%)", "Fair P/E", "Target (₹)", "Distance (%)", "Lifetime Div (₹)", "Action"]
             df_family_disp = df_family[cols_order].sort_values(by="P&L (%)", ascending=False).reset_index(drop=True)
             
             df_family_disp["Entry Price"] = df_family_disp["Entry Price"].apply(lambda x: f"₹{x:,.2f}")
