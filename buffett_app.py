@@ -13,15 +13,15 @@ CONFIG_FILE = "portfolio_config.json"
 
 DEFAULT_CONFIG = {
     "CORE_HOLDINGS": {
-        "ASIANPAINT.NS": {"Qty": 11}, 
-        "NESTLEIND.NS": {"Qty": 20}, 
-        "PIDILITIND.NS": {"Qty": 17}, 
-        "HDFCBANK.NS": {"Qty": 28}, 
-        "TCS.NS": {"Qty": 10}, 
-        "ITC.NS": {"Qty": 80}
+        "ASIANPAINT.NS": {"Qty": 12}, 
+        "NESTLEIND.NS": {"Qty": 24}, 
+        "PIDILITIND.NS": {"Qty": 21}, 
+        "HDFCBANK.NS": {"Qty": 34}, 
+        "TCS.NS": {"Qty": 12}, 
+        "ITC.NS": {"Qty": 98}
     },
     "DEBT_HOLDINGS": {
-        "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 0.00, "Fallback_NAV": 34.00} 
+        "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 80.86, "Fallback_NAV": 34.00} 
     },
     "FAMILY_PORTFOLIO": {
         "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
