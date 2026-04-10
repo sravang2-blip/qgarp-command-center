@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-st.set_page_config(page_title="Sravan's QGARP Command Center v11.2", layout="wide")
+st.set_page_config(page_title="Sravan's QGARP Command Center v11.4", layout="wide")
 
 # --- PERSISTENT CONFIGURATION MANAGEMENT ---
 CONFIG_FILE = "portfolio_config.json"
@@ -161,7 +161,7 @@ with st.sidebar.expander("⚙️ Update Portfolio Quantities", expanded=False):
             st.success("Holdings & Ledgers saved securely!")
             st.rerun()
 
-st.sidebar.caption("v11.2 Engine: Final Polish. Full execution accountability & lifetime yield tracking.")
+st.sidebar.caption("v11.4 Engine: The Final Masterpiece. UI Polish & Accounting Complete.")
 
 # --- UI HELPER FUNCTIONS ---
 def safe_float(info_dict, key, default=0.0):
@@ -386,7 +386,7 @@ def fetch_market_data(scan_list_param):
     return all_data, errors
 
 # --- UI EXECUTION ---
-st.title("🏛️ Sravan's Unified Command Center v11.2")
+st.title("🏛️ Sravan's Unified Command Center v11.4")
 st.write("Complete Portfolio OS. Automating execution, rebalancing, and stateful dividend harvesting.")
 st.caption(f"Last Market Sync: {pd.Timestamp.now().strftime('%d %b %Y %H:%M IST')}")
 
@@ -408,12 +408,10 @@ if st.button("🚀 Run Command Center Scan"):
                     if not divs.empty:
                         divs.index = divs.index.tz_localize(None)
                         
-                        # 1. Stateless 30D Window (For routing directly into this month's SIP pool)
                         cutoff_30d = pd.Timestamp.now().tz_localize(None) - pd.Timedelta(days=30)
                         recent_divs = divs[divs.index >= cutoff_30d]
                         total_dividend_cash_30d += float(recent_divs.sum()) * qty
                         
-                        # 2. Stateful Ledger (Updates your lifetime database forever)
                         last_date_str = data.get("Last_Dividend_Date", "1970-01-01")
                         last_date = pd.Timestamp(last_date_str).tz_localize(None)
                         
@@ -431,7 +429,6 @@ if st.button("🚀 Run Command Center Scan"):
             
         total_deployment_capital = sip_capital + total_dividend_cash_30d
 
-        # Fetch live market data
         all_data, errors = fetch_market_data(SCAN_LIST)
         
     if errors:
@@ -451,7 +448,6 @@ if st.button("🚀 Run Command Center Scan"):
         df_fortress["Qty"] = df_fortress["Ticker"].map(lambda t: CORE_HOLDINGS.get(t, {}).get("Qty", 0))
         df_fortress["Current Value (₹)"] = df_fortress["Qty"] * df_fortress["Live Price"]
         
-        # Inject Lifetime Dividends from the JSON Database
         df_fortress["Lifetime Div (₹)"] = df_fortress["Ticker"].map(lambda t: app_config["CORE_HOLDINGS"].get(t, {}).get("Lifetime_Dividends", 0.0))
         df_fortress["Lifetime Div (₹)"] = df_fortress["Lifetime Div (₹)"].apply(lambda x: f"₹{x:,.0f}")
 
@@ -506,7 +502,6 @@ if st.button("🚀 Run Command Center Scan"):
             df_family["Current Value"] = df_family["Qty"] * df_family["Live Price"]
             df_family["P&L (%)"] = ((df_family["Live Price"] - df_family["Entry Price"]) / df_family["Entry Price"]) * 100
             
-            # Inject Lifetime Dividends
             df_family["Lifetime Div (₹)"] = df_family["Ticker"].map(lambda t: app_config["FAMILY_PORTFOLIO"].get(t, {}).get("Lifetime_Dividends", 0.0))
             df_family["Lifetime Div (₹)"] = df_family["Lifetime Div (₹)"].apply(lambda x: f"₹{x:,.0f}")
 
@@ -514,8 +509,10 @@ if st.button("🚀 Run Command Center Scan"):
             total_current = df_family["Current Value"].sum()
             total_pnl_pct = ((total_current - total_invested) / total_invested) * 100 if total_invested > 0 else 0.0
 
+        # --- V11.3/4: DEBT TRACKING MODULE ---
         total_debt_value = 0.0
         debt_display_data = [] 
+        debt_table_data = []
         
         for fund_name, data in DEBT_HOLDINGS.items():
             live_nav = data.get("Fallback_NAV", 0.0)
@@ -530,9 +527,20 @@ if st.button("🚀 Run Command Center Scan"):
                 except Exception:
                     pass 
             
-            fund_value = data.get("Qty", 0.0) * live_nav
+            qty = data.get("Qty", 0.0)
+            fund_value = qty * live_nav
             total_debt_value += fund_value
             debt_display_data.append(f"{fund_name} (Live NAV: ₹{live_nav:.2f})")
+            
+            debt_table_data.append({
+                "Fund Name": fund_name,
+                "Ticker": ticker if ticker else "N/A",
+                "Units Accumulated": qty,
+                "Live NAV (₹)": live_nav,
+                "Total Corpus (₹)": fund_value
+            })
+            
+        df_debt = pd.DataFrame(debt_table_data)
 
         st.markdown("---")
         st.subheader("📊 Executive Portfolio Summary")
@@ -613,7 +621,6 @@ if st.button("🚀 Run Command Center Scan"):
                 df_sip_disp = format_df(df_active_orders, drop_score=True)[cols_to_show]
                 st.dataframe(df_sip_disp.style.apply(highlight_action, axis=1), use_container_width=True)
                 
-                # --- FIXED: V11.2 UI Polish (Grok's clear accounting breakdown) ---
                 if total_dividend_cash_30d > 0:
                     st.success(f"📈 **Execution Strategy:** Buy the exact equity shares listed above. | **Total Executed:** ₹{total_executed_value:,.0f} | **Dry Powder to Kotak Arbitrage:** ₹{dry_powder_generated:,.0f} (includes ₹{total_dividend_cash_30d:,.0f} dividends)")
                 else:
@@ -622,9 +629,9 @@ if st.button("🚀 Run Command Center Scan"):
                  st.info("The engine calculated the ideal distribution, but your capital wasn't enough to buy a full share of the recommended stocks this month. Sweep all capital to the Kotak Arbitrage Fund.")
         else:
             if total_dividend_cash_30d > 0:
-                st.success(f"All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month. This includes **₹{total_dividend_cash_30d:,.2f}** in harvested dividends.")
+                st.success(f"All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month. | **Total Executed:** ₹0 | **Dry Powder to Kotak Arbitrage:** ₹{dry_powder_generated:,.0f} (includes ₹{total_dividend_cash_30d:,.0f} dividends)")
             else:
-                st.success("All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month.")
+                st.success(f"All core stocks are currently overvalued. Execute your Dry Powder Strategy (Kotak Arbitrage Fund) entirely this month. | **Total Executed:** ₹0 | **Dry Powder to Kotak Arbitrage:** ₹{dry_powder_generated:,.0f}")
 
         st.markdown("---")
         st.subheader("🛡️ The 6-Stock Fortress Radar")
@@ -654,6 +661,18 @@ if st.button("🚀 Run Command Center Scan"):
             st.dataframe(df_family_disp.style.apply(highlight_family, axis=1), use_container_width=True)
         else:
             st.info("Family portfolio data is currently loading or unavailable.")
+
+        # --- V11.4: STRATEGIC DEBT DASHBOARD (POLISHED) ---
+        st.markdown("---")
+        st.subheader("🏦 Strategic Debt & Dry Powder")
+        st.write("Tracking your risk-free accumulated arbitrage corpus.")
+        st.caption("This is your risk-free dry powder. All un-deployed SIP + dividend cash is automatically swept here.")
+        if not df_debt.empty:
+            df_debt_disp = df_debt.copy()
+            df_debt_disp["Units Accumulated"] = df_debt_disp["Units Accumulated"].apply(lambda x: f"{x:,.3f}")
+            df_debt_disp["Live NAV (₹)"] = df_debt_disp["Live NAV (₹)"].apply(lambda x: f"₹{x:,.4f}")
+            df_debt_disp["Total Corpus (₹)"] = df_debt_disp["Total Corpus (₹)"].apply(lambda x: f"₹{x:,.0f}")
+            st.dataframe(df_debt_disp, use_container_width=True, hide_index=True)
 
         st.markdown("---")
         st.subheader("🦅 Elite Discovery Zone (Pure Nifty 50 Screener)")
