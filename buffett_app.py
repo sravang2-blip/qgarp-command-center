@@ -546,8 +546,11 @@ if st.button("🚀 Run Command Center Scan"):
         st.subheader("📊 Executive Portfolio Summary")
         col1, col2, col3, col4, col5 = st.columns(5)
         
-        if not df_family.empty: col1.metric("Family Portfolio", f"₹{total_current:,.0f}", f"{total_pnl_pct:+.2f}%")
-        else: col1.metric("Family Portfolio", "N/A")
+        # --- NEW CODE FOR COL 1 ---
+        if not df_family.empty: 
+            col1.metric(f"Family Portfolio (Inv: ₹{total_invested:,.0f})", f"₹{total_current:,.0f}", f"{total_pnl_pct:+.2f}%")
+        else: 
+            col1.metric("Family Portfolio", "N/A")
             
         buy_zone_count = len(df_sip)
         delta_str = f"{buy_zone_count} in Buy Zone" if buy_zone_count > 0 else "None in Buy Zone"
