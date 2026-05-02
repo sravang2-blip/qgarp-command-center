@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
         "ITC.NS": {"Qty": 98}
     },
     "DEBT_HOLDINGS": {
-        "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 80.86, "Fallback_NAV": 34.00} 
+        "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 144.821, "Fallback_NAV": 34.00} 
     },
     "FAMILY_PORTFOLIO": {
         "ATHERENERG.NS": {"Qty": 250, "Entry Price": 425.60},     
