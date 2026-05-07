@@ -15,10 +15,10 @@ DEFAULT_CONFIG = {
     "CORE_HOLDINGS": {
         "ASIANPAINT.NS": {"Qty": 12}, 
         "NESTLEIND.NS": {"Qty": 24}, 
-        "PIDILITIND.NS": {"Qty": 21}, 
-        "HDFCBANK.NS": {"Qty": 34}, 
-        "TCS.NS": {"Qty": 12}, 
-        "ITC.NS": {"Qty": 98}
+        "PIDILITIND.NS": {"Qty": 26}, 
+        "HDFCBANK.NS": {"Qty": 43}, 
+        "TCS.NS": {"Qty": 15}, 
+        "ITC.NS": {"Qty": 118}
     },
     "DEBT_HOLDINGS": {
         "Kotak Arbitrage Fund": {"Ticker": "0P0000XV5S.BO", "Qty": 144.821, "Fallback_NAV": 34.00} 
